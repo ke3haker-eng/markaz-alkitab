@@ -1,0 +1,2435 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>نظام محمود الزيان - الحلاق</title>
+
+    <!-- Tailwind من CDN مع fallback -->
+    <script src="https://cdn.tailwindcss.com" onerror="loadTailwindFallback()"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;900&display=swap" rel="stylesheet">
+
+    <!-- Firebase SDK — يُحمَّل بالترتيب الصحيح -->
+    <script>
+    window.firebaseReady = false;
+
+    // تحميل سكريبت واحد والانتظار حتى يكتمل
+    function loadScript(src) {
+        return new Promise((resolve, reject) => {
+            const s = document.createElement('script');
+            s.src = src;
+            s.onload  = () => resolve(true);
+            s.onerror = () => resolve(false); // resolve بدل reject حتى لا نوقف التطبيق
+            document.head.appendChild(s);
+        });
+    }
+
+    // تحميل Firebase بالترتيب: app ← auth ← firestore
+    async function loadFirebase() {
+        if (window.firebase && window.firebase.firestore) {
+            window.firebaseReady = true;
+            return true;
+        }
+        const base = 'https://www.gstatic.com/firebasejs/10.12.0/';
+        const r1 = await loadScript(base + 'firebase-app-compat.js');
+        if (!r1) return false;
+        const r2 = await loadScript(base + 'firebase-auth-compat.js');
+        if (!r2) return false;
+        const r3 = await loadScript(base + 'firebase-firestore-compat.js');
+        if (!r3) return false;
+        window.firebaseReady = true;
+        return true;
+    }
+
+    function loadTailwindFallback() {
+        console.warn('Tailwind CDN فشل');
+    }
+    </script>
+
+    <style>
+        body { font-family: 'Tajawal', sans-serif; background-color: #f1f5f9; user-select: none; }
+        .main-gradient { background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); }
+        .card-shadow { box-shadow: 0 4px 15px -3px rgba(0,0,0,0.07); }
+        .status-paid { background-color:#dcfce7; color:#15803d; }
+        .status-unpaid { background-color:#fee2e2; color:#b91c1c; }
+        .animate-fade { animation: fadeIn 0.3s ease-out; }
+        @keyframes fadeIn { from{opacity:0;transform:translateY(5px)} to{opacity:1;transform:translateY(0)} }
+        @keyframes shake { 0%,100%{transform:translateX(0)} 20%{transform:translateX(-8px)} 40%{transform:translateX(8px)} 60%{transform:translateX(-6px)} 80%{transform:translateX(6px)} }
+
+        /* شريط حالة المزامنة */
+        #syncBar { transition: all 0.3s ease; }
+        .sync-offline { background:#fef2f2; border-bottom:2px solid #fca5a5; color:#dc2626; }
+        .sync-online  { background:#f0fdf4; border-bottom:2px solid #86efac; color:#16a34a; }
+        .sync-syncing { background:#eff6ff; border-bottom:2px solid #93c5fd; color:#2563eb; }
+
+        /* واجهة الاختيار الأولى */
+        .role-card {
+            background:white; border-radius:2rem; padding:2.5rem 2rem;
+            box-shadow:0 8px 30px rgba(0,0,0,0.1); cursor:pointer;
+            transition:all 0.2s; border:3px solid transparent; text-align:center;
+        }
+        .role-card:active { transform:scale(0.96); }
+        .role-card.barber-card:hover { border-color:#0f172a; }
+        .role-card.client-card:hover  { border-color:#2563eb; }
+
+        /* أزرار التبويب السفلي */
+        .tab-btn { flex:1; padding:0.75rem 0.5rem; display:flex; flex-direction:column;
+            align-items:center; gap:0.25rem; border-radius:1rem; transition:all 0.2s;
+            color:#94a3b8; font-size:0.65rem; font-weight:700; }
+        .tab-btn.active { background:#0f172a; color:white; }
+        .tab-btn svg { width:1.4rem; height:1.4rem; }
+
+        /* بطاقة الموعد */
+        .appt-card { background:white; border-radius:1.5rem; padding:1rem 1.25rem;
+            box-shadow:0 2px 8px rgba(0,0,0,0.06); margin-bottom:0.75rem;
+            border-right:4px solid #0f172a; }
+        .appt-card.confirmed { border-color:#16a34a; }
+        .appt-card.pending   { border-color:#d97706; }
+        .appt-card.cancelled { border-color:#dc2626; opacity:0.6; }
+
+        /* محادثة */
+        .msg-bubble-barber { background:#0f172a; color:white; border-radius:1.25rem 1.25rem 0.25rem 1.25rem; }
+        .msg-bubble-client  { background:white; color:#1e293b; border-radius:1.25rem 1.25rem 1.25rem 0.25rem;
+            box-shadow:0 2px 8px rgba(0,0,0,0.06); }
+
+        .badge { display:inline-flex; align-items:center; justify-content:center;
+            width:1.25rem; height:1.25rem; border-radius:50%; background:#dc2626;
+            color:white; font-size:0.6rem; font-weight:900; position:absolute; top:-4px; right:-4px; }
+
+        /* حقل الإدخال للوقت */
+        input[type="time"], input[type="date"] { direction:ltr; text-align:center; }
+
+        /* مودال */
+        .modal-overlay { background:rgba(15,23,42,0.6); backdrop-filter:blur(4px); }
+    </style>
+</head>
+<body class="min-h-screen pb-24">
+
+<!-- ══════════════════════════════════════════════════
+     شريط حالة المزامنة (يظهر دائماً في الأعلى)
+══════════════════════════════════════════════════ -->
+<div id="syncBar" class="sync-offline text-center text-xs font-bold py-1.5 px-4 hidden">
+    <span id="syncBarText">🔴 أوفلاين</span>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     شاشة اختيار الدور (أول ما يُفتح التطبيق)
+══════════════════════════════════════════════════ -->
+<div id="roleScreen" class="fixed inset-0 z-[200] main-gradient flex items-center justify-center p-6">
+    <div class="w-full max-w-sm">
+        <div class="text-center mb-8">
+            <div class="w-20 h-20 bg-white/10 rounded-2xl mx-auto mb-4 flex items-center justify-center text-4xl">✂️</div>
+            <h1 class="text-3xl font-black text-white">نظام محمود الزيان</h1>
+            <p class="text-slate-400 text-sm mt-1">اختر طريقة الدخول</p>
+        </div>
+        <div class="grid grid-cols-1 gap-4">
+            <div class="role-card barber-card" onclick="showBarberAuth()">
+                <div class="text-5xl mb-3">💈</div>
+                <h3 class="text-xl font-black text-slate-800 mb-1">دخول الحلاق</h3>
+                <p class="text-slate-500 text-sm">إدارة المواعيد والزبائن والسجلات</p>
+            </div>
+            <div class="role-card client-card" onclick="showClientAuth()">
+                <div class="text-5xl mb-3">👤</div>
+                <h3 class="text-xl font-black text-slate-800 mb-1">دخول الزبون</h3>
+                <p class="text-slate-500 text-sm">احجز موعدك وتواصل مع الحلاق</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     شاشة تسجيل الدخول (مشتركة)
+══════════════════════════════════════════════════ -->
+<div id="authScreen" class="fixed inset-0 z-[190] main-gradient flex items-center justify-center p-6 hidden">
+    <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-sm shadow-2xl">
+        <div class="text-center mb-6">
+            <div class="text-5xl mb-3" id="authScreenIcon">💈</div>
+            <h2 class="text-xl font-black text-slate-800" id="authScreenTitle">تسجيل دخول الحلاق</h2>
+            <p class="text-slate-400 text-sm mt-1" id="authScreenSub">أدخل بياناتك للمتابعة</p>
+        </div>
+
+        <!-- حقول الدخول -->
+        <div id="loginForm">
+            <div class="relative mb-3">
+                <span class="absolute right-4 top-4 text-slate-400 text-lg">@</span>
+                <input type="text" id="authUsername" placeholder="اسم المستخدم"
+                    class="w-full bg-slate-50 p-4 pr-10 rounded-2xl border-none focus:ring-2 ring-slate-200 text-right"
+                    autocomplete="username" autocapitalize="none">
+            </div>
+            <input type="password" id="authPass" placeholder="كلمة المرور"
+                class="w-full bg-slate-50 p-4 rounded-2xl mb-4 border-none focus:ring-2 ring-slate-200 text-right"
+                autocomplete="current-password">
+            <p id="authError" class="text-red-500 text-sm font-bold mb-3 hidden text-center"></p>
+            <button onclick="doLogin()" id="loginBtn"
+                class="w-full main-gradient text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all mb-3">
+                تسجيل الدخول
+            </button>
+            <button onclick="showRegisterForm()" class="w-full text-slate-500 text-sm font-bold py-2">
+                إنشاء حساب جديد
+            </button>
+        </div>
+
+        <!-- حقول التسجيل -->
+        <div id="registerForm" class="hidden">
+            <input type="text" id="regName" placeholder="الاسم الكامل (مثال: صالون أبو أحمد)"
+                class="w-full bg-slate-50 p-4 rounded-2xl mb-3 border-none focus:ring-2 ring-slate-200 text-right">
+            <div class="relative mb-3">
+                <span class="absolute right-4 top-4 text-slate-400 text-lg">@</span>
+                <input type="text" id="regUsername" placeholder="اسم المستخدم (بدون مسافات)"
+                    class="w-full bg-slate-50 p-4 pr-10 rounded-2xl border-none focus:ring-2 ring-slate-200 text-right"
+                    autocomplete="username" autocapitalize="none">
+            </div>
+            <p class="text-[11px] text-slate-400 font-bold mb-3 text-center">
+                مثال: mahmoud_barber أو حلاق_محمود
+            </p>
+            <!-- حقل رقم الهاتف للحلاق فقط -->
+            <input type="tel" id="regPhone" placeholder="رقم هاتفك (سيُستخدم كرمز الزبون)"
+                class="w-full bg-slate-50 p-4 rounded-2xl mb-3 border-none focus:ring-2 ring-slate-200 text-center hidden">
+            <input type="password" id="regPass" placeholder="كلمة المرور (6 أحرف فأكثر)"
+                class="w-full bg-slate-50 p-4 rounded-2xl mb-4 border-none focus:ring-2 ring-slate-200 text-right"
+                autocomplete="new-password">
+            <p id="regError" class="text-red-500 text-sm font-bold mb-3 hidden text-center"></p>
+            <button onclick="doRegister()" id="registerBtn"
+                class="w-full main-gradient text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all mb-3">
+                إنشاء الحساب
+            </button>
+            <button onclick="showLoginForm()" class="w-full text-slate-500 text-sm font-bold py-2">
+                لديّ حساب — تسجيل الدخول
+            </button>
+        </div>
+
+        <!-- زر الرجوع -->
+        <button onclick="backToRoleScreen()" class="w-full text-slate-400 text-xs font-bold py-2 mt-2 flex items-center justify-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            رجوع
+        </button>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     واجهة دخول الزبون بالهاتف
+══════════════════════════════════════════════════ -->
+<div id="clientPhoneScreen" class="fixed inset-0 z-[190] main-gradient flex items-center justify-center p-6 hidden">
+    <div class="bg-white rounded-[2.5rem] p-8 w-full max-w-sm shadow-2xl text-center">
+        <div class="text-5xl mb-4">📱</div>
+        <h2 class="text-xl font-black text-slate-800 mb-2">دخول الزبون</h2>
+        <p class="text-slate-400 text-sm mb-6">أدخل رقم هاتف الحلاق للوصول إلى صفحته</p>
+        <input type="tel" id="barberPhoneInput" placeholder="رقم هاتف الحلاق"
+            class="w-full bg-slate-50 p-4 rounded-2xl mb-4 border-none focus:ring-2 ring-blue-200 text-center text-xl font-bold" dir="ltr">
+        <p id="clientPhoneError" class="text-red-500 text-sm font-bold mb-3 hidden"></p>
+        <button onclick="doClientLogin()"
+            class="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all mb-3">
+            دخول
+        </button>
+        <p class="text-slate-400 text-xs mb-3">أو</p>
+        <button onclick="showAuthScreen('client')"
+            class="w-full bg-slate-100 text-slate-600 font-bold py-3 rounded-2xl text-sm mb-3">
+            دخول بحساب زبون
+        </button>
+        <button onclick="backToRoleScreen()" class="w-full text-slate-400 text-xs font-bold py-2 flex items-center justify-center gap-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/></svg>
+            رجوع
+        </button>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     واجهة الحلاق الرئيسية
+══════════════════════════════════════════════════ -->
+<div id="barberApp" class="hidden">
+    <!-- هيدر -->
+    <header class="main-gradient text-white p-6 pb-20 rounded-b-[3rem] shadow-xl">
+        <div class="max-w-2xl mx-auto flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-black" id="barberName">محمود الزيان</h1>
+                <p class="text-slate-400 text-[10px] uppercase font-bold tracking-widest">لوحة تحكم الحلاق</p>
+            </div>
+            <button onclick="doSignOut()" class="bg-white/10 p-3 rounded-2xl hover:bg-white/20" title="تسجيل الخروج">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <!-- المحتوى الرئيسي للحلاق -->
+    <main class="max-w-2xl mx-auto px-4 -mt-12">
+
+        <!-- تبويب: السجل اليومي (مطابق للتطبيق الأصلي) -->
+        <div id="barberTab_records" class="animate-fade">
+            <div class="grid grid-cols-2 gap-4 mb-6">
+                <div class="bg-white p-5 rounded-3xl shadow-sm border-b-4 border-emerald-500 text-center">
+                    <p class="text-slate-400 text-[10px] font-bold mb-1">المقبوضات</p>
+                    <p class="text-2xl font-black text-slate-800"><span id="totalPaid">0</span> ₪</p>
+                </div>
+                <div class="bg-white p-5 rounded-3xl shadow-sm border-b-4 border-red-500 text-center">
+                    <p class="text-slate-400 text-[10px] font-bold mb-1">الديون</p>
+                    <p class="text-2xl font-black text-slate-800"><span id="totalUnpaid">0</span> ₪</p>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-[2.5rem] card-shadow mb-6">
+                <div class="grid grid-cols-1 gap-3">
+                    <div class="relative">
+                        <input type="text" id="nameInp" list="savedNames" oninput="handleNameInput()" placeholder="اسم الزبون"
+                            class="w-full bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-slate-200">
+                        <datalist id="savedNames"></datalist>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="number" id="amountInp" placeholder="المبلغ ₪" class="bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-slate-200 font-bold text-center">
+                        <input type="tel" id="phoneInp" placeholder="رقم الجوال" class="bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-slate-200 text-center">
+                    </div>
+                    <div class="flex gap-2">
+                        <select id="statusInp" class="flex-1 bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-slate-200 font-bold">
+                            <option value="unpaid">⚠️ دين</option>
+                            <option value="paid">✅ كاش</option>
+                        </select>
+                        <button onclick="addNewEntry()" class="flex-[2] main-gradient text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">
+                            حفظ العملية
+                        </button>
+                    </div>
+                </div>
+            </div>
+            <div class="mb-4 relative">
+                <input type="text" id="searchInp" oninput="renderData()" placeholder="بحث في السجل اليومي..."
+                    class="w-full bg-white p-4 pr-12 rounded-2xl shadow-sm border-none">
+                <svg class="w-5 h-5 text-slate-300 absolute right-4 top-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+                </svg>
+            </div>
+            <div id="dataList" class="space-y-3 pb-6"></div>
+        </div>
+
+        <!-- تبويب: المواعيد والحجوزات -->
+        <div id="barberTab_appointments" class="hidden animate-fade">
+            <!-- إعدادات أوقات المحل -->
+            <div class="bg-white p-6 rounded-[2.5rem] card-shadow mb-5">
+                <h3 class="font-black text-slate-800 mb-4 flex items-center gap-2">
+                    <span class="w-2 h-6 bg-emerald-500 rounded-full"></span> أوقات عمل المحل
+                </h3>
+                <div class="grid grid-cols-2 gap-3 mb-4">
+                    <div>
+                        <label class="text-xs text-slate-500 font-bold block mb-1">وقت الفتح</label>
+                        <input type="time" id="shopOpen" class="w-full bg-slate-50 p-3 rounded-2xl border-none focus:ring-2 ring-slate-200 font-bold" value="09:00">
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-500 font-bold block mb-1">وقت الإغلاق</label>
+                        <input type="time" id="shopClose" class="w-full bg-slate-50 p-3 rounded-2xl border-none focus:ring-2 ring-slate-200 font-bold" value="22:00">
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <label class="text-xs text-slate-500 font-bold block mb-1">مدة الحجز (دقيقة)</label>
+                    <select id="slotDuration" class="w-full bg-slate-50 p-3 rounded-2xl border-none focus:ring-2 ring-slate-200 font-bold">
+                        <option value="15">15 دقيقة</option>
+                        <option value="20">20 دقيقة</option>
+                        <option value="30" selected>30 دقيقة</option>
+                        <option value="45">45 دقيقة</option>
+                        <option value="60">ساعة كاملة</option>
+                    </select>
+                </div>
+                <button onclick="saveShopSettings()"
+                    class="w-full main-gradient text-white font-black py-3 rounded-2xl shadow-lg active:scale-95 transition-all text-sm">
+                    💾 حفظ إعدادات المحل
+                </button>
+            </div>
+
+            <!-- الحجوزات الواردة -->
+            <div class="mb-3 flex items-center justify-between">
+                <h3 class="font-black text-slate-800">طلبات الحجز</h3>
+                <span class="bg-slate-100 text-slate-500 text-xs font-bold px-3 py-1 rounded-full" id="pendingCount">0 طلب</span>
+            </div>
+            <div id="appointmentsList" class="space-y-3 pb-6">
+                <p class="text-center text-slate-400 py-8">لا توجد حجوزات بعد</p>
+            </div>
+        </div>
+
+        <!-- تبويب: المحادثات والرسائل -->
+        <div id="barberTab_messages" class="hidden animate-fade">
+            <div class="mb-3">
+                <h3 class="font-black text-slate-800 mb-1">رسائل الزبائن</h3>
+                <p class="text-xs text-slate-400">انقر على محادثة للرد عليها</p>
+            </div>
+            <div id="conversationsList" class="space-y-3 pb-6">
+                <p class="text-center text-slate-400 py-8">لا توجد رسائل بعد</p>
+            </div>
+        </div>
+
+        <!-- تبويب: بيانات الدفع -->
+        <div id="barberTab_payment" class="hidden animate-fade">
+            <div class="bg-white p-6 rounded-[2.5rem] card-shadow mb-5">
+                <h3 class="font-black text-slate-800 mb-4 flex items-center gap-2">
+                    <span class="w-2 h-6 bg-blue-500 rounded-full"></span> بيانات استلام المدفوعات
+                </h3>
+                <p class="text-xs text-slate-400 mb-4">هذه البيانات ستظهر للزبائن عند الحجز</p>
+                <div class="space-y-3">
+                    <div>
+                        <label class="text-xs text-slate-500 font-bold block mb-1">نوع الحساب</label>
+                        <select id="payAccountType" class="w-full bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-slate-200 font-bold">
+                            <option value="phone">رقم هاتف (واتساب/تحويل)</option>
+                            <option value="iban">رقم IBAN</option>
+                            <option value="paypal">باي بال</option>
+                            <option value="other">أخرى</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-500 font-bold block mb-1">رقم الحساب / الهاتف</label>
+                        <input type="text" id="payAccountNum" placeholder="أدخل رقم الحساب أو الهاتف"
+                            class="w-full bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-slate-200" dir="ltr">
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-500 font-bold block mb-1">اسم صاحب الحساب</label>
+                        <input type="text" id="payAccountName" placeholder="الاسم كما في الحساب"
+                            class="w-full bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-slate-200">
+                    </div>
+                    <div>
+                        <label class="text-xs text-slate-500 font-bold block mb-1">ملاحظات إضافية</label>
+                        <textarea id="payNotes" rows="2" placeholder="مثال: أوقات التحويل، عملة الدفع..."
+                            class="w-full bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-slate-200 resize-none"></textarea>
+                    </div>
+                    <button onclick="savePaymentInfo()"
+                        class="w-full main-gradient text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">
+                        💾 حفظ بيانات الدفع
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- تبويب: المحفوظات (قاعدة الزبائن) -->
+        <div id="barberTab_customers" class="hidden animate-fade">
+            <div class="bg-white p-6 rounded-[2.5rem] card-shadow mb-6">
+                <h3 class="font-black text-slate-800 mb-4 flex items-center gap-2">
+                    <span class="w-2 h-6 bg-blue-600 rounded-full"></span> إضافة زبون دائم للمحفوظات
+                </h3>
+                <div class="space-y-3">
+                    <input type="text" id="cName" placeholder="اسم الزبون الكامل" class="w-full bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-blue-100">
+                    <input type="tel" id="cPhone" placeholder="رقم الجوال" class="w-full bg-slate-50 p-4 rounded-2xl border-none focus:ring-2 ring-blue-100">
+                    <button onclick="saveCustomer()" class="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">
+                        حفظ في المحفوظات
+                    </button>
+                </div>
+            </div>
+            <div id="customerList" class="space-y-3 pb-10"></div>
+        </div>
+
+    </main>
+
+    <!-- شريط التنقل السفلي للحلاق -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 shadow-xl z-50">
+        <div class="max-w-2xl mx-auto flex p-2 gap-1">
+            <button class="tab-btn active" id="navB_records" onclick="switchBarberTab('records')">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/></svg>
+                السجل
+            </button>
+            <button class="tab-btn" id="navB_appointments" onclick="switchBarberTab('appointments')">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                الحجوزات
+            </button>
+            <button class="tab-btn relative" id="navB_messages" onclick="switchBarberTab('messages')">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                الرسائل
+                <span id="msgBadge" class="badge hidden">0</span>
+            </button>
+            <button class="tab-btn" id="navB_payment" onclick="switchBarberTab('payment')">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+                الدفع
+            </button>
+            <button class="tab-btn" id="navB_customers" onclick="switchBarberTab('customers')">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+                الزبائن
+            </button>
+        </div>
+    </nav>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     واجهة الزبون الرئيسية
+══════════════════════════════════════════════════ -->
+<div id="clientApp" class="hidden">
+    <!-- هيدر الزبون -->
+    <header class="bg-gradient-to-br from-blue-700 to-blue-900 text-white p-6 pb-20 rounded-b-[3rem] shadow-xl">
+        <div class="max-w-2xl mx-auto flex justify-between items-center">
+            <div>
+                <p class="text-blue-300 text-[10px] uppercase font-bold tracking-widest mb-1">صفحة الزبون</p>
+                <h1 class="text-2xl font-black" id="clientBarberName">محمود الزيان</h1>
+            </div>
+            <button onclick="doSignOut()" class="bg-white/10 p-3 rounded-2xl hover:bg-white/20" title="خروج">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"/>
+                </svg>
+            </button>
+        </div>
+    </header>
+
+    <main class="max-w-2xl mx-auto px-4 -mt-12">
+
+        <!-- تبويب: حجز موعد -->
+        <div id="clientTab_book" class="animate-fade">
+
+            <!-- بطاقة أوقات العمل + زر الحجز -->
+            <div class="bg-white rounded-[2rem] card-shadow mb-4 overflow-hidden">
+                <!-- هيدر المحل -->
+                <div class="p-5 flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                        <div class="w-12 h-12 main-gradient rounded-2xl flex items-center justify-center text-2xl">✂️</div>
+                        <div>
+                            <p class="font-black text-slate-800" id="clientShopNameDisplay">المحل</p>
+                            <div class="flex gap-3 mt-0.5">
+                                <span class="text-[11px] text-emerald-600 font-bold">🟢 فتح <span id="clientShopOpen">09:00</span></span>
+                                <span class="text-[11px] text-red-500 font-bold">🔴 إغلاق <span id="clientShopClose">22:00</span></span>
+                            </div>
+                        </div>
+                    </div>
+                    <button onclick="toggleBookForm()"
+                        class="bg-blue-600 text-white font-black px-4 py-2.5 rounded-2xl text-sm active:scale-95 transition-all flex items-center gap-1.5" id="bookToggleBtn">
+                        📅 احجز
+                    </button>
+                </div>
+
+                <!-- نموذج الحجز المطوي -->
+                <div id="bookFormCollapse" class="hidden border-t border-slate-100">
+                    <div class="p-5 space-y-3">
+
+                        <!-- اختيار التاريخ أولاً -->
+                        <div>
+                            <label class="text-xs text-slate-500 font-bold block mb-1.5">📆 اختر التاريخ</label>
+                            <input type="date" id="bookDate"
+                                class="w-full bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 focus:border-blue-300 font-bold transition-all"
+                                onchange="onDateChange()">
+                        </div>
+
+                        <!-- شبكة الأوقات المتاحة -->
+                        <div id="timeSlotsSection" class="hidden">
+                            <label class="text-xs text-slate-500 font-bold block mb-2">🕐 اختر الوقت المتاح</label>
+                            <div id="timeSlotsGrid" class="grid grid-cols-3 gap-2 max-h-48 overflow-y-auto"></div>
+                            <!-- حقل الوقت المخفي -->
+                            <input type="hidden" id="bookTime">
+                            <p id="timeSlotError" class="text-red-500 text-xs font-bold mt-2 hidden"></p>
+                        </div>
+
+                        <!-- بقية البيانات — تظهر بعد اختيار الوقت -->
+                        <div id="bookRestFields" class="hidden space-y-3">
+                            <input type="text" id="bookName" placeholder="اسمك الكامل"
+                                class="w-full bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 focus:border-blue-300 transition-all">
+                            <input type="tel" id="bookPhone" placeholder="رقم هاتفك"
+                                class="w-full bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 focus:border-blue-300 transition-all text-center" dir="ltr">
+                            <textarea id="bookNote" rows="2" placeholder="ملاحظات (اختياري)"
+                                class="w-full bg-slate-50 p-4 rounded-2xl border-2 border-slate-100 focus:border-blue-300 transition-all resize-none"></textarea>
+                            <button onclick="submitBooking()"
+                                class="w-full bg-blue-600 text-white font-black py-4 rounded-2xl shadow-lg active:scale-95 transition-all">
+                                📅 إرسال طلب الحجز
+                            </button>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- حجوزاتي -->
+            <div class="flex items-center justify-between mb-3">
+                <h3 class="font-black text-slate-800">حجوزاتي</h3>
+            </div>
+            <div id="myAppointmentsList" class="space-y-3 pb-6">
+                <p class="text-center text-slate-400 py-6 text-sm">لا توجد حجوزات</p>
+            </div>
+        </div>
+
+        <!-- تبويب: بيانات الدفع -->
+        <div id="clientTab_payment" class="hidden animate-fade">
+            <div class="bg-white p-6 rounded-[2.5rem] card-shadow mb-5">
+                <h3 class="font-black text-slate-800 mb-4 flex items-center gap-2">
+                    <span class="w-2 h-6 bg-blue-500 rounded-full"></span> بيانات الدفع للحلاق
+                </h3>
+                <div id="clientPaymentInfo">
+                    <p class="text-center text-slate-400 py-8">لم يحدد الحلاق بيانات الدفع بعد</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- تبويب: المراسلة -->
+        <div id="clientTab_chat" class="hidden animate-fade">
+            <!-- منطقة المحادثة -->
+            <div class="bg-white rounded-[2rem] card-shadow mb-3 overflow-hidden">
+                <div class="p-4 border-b border-slate-100 flex items-center gap-3">
+                    <div class="w-10 h-10 main-gradient rounded-full flex items-center justify-center text-white font-black">✂</div>
+                    <div>
+                        <p class="font-black text-slate-800 text-sm" id="chatBarberName">محمود الزيان</p>
+                        <p class="text-[10px] text-slate-400">حلاق</p>
+                    </div>
+                </div>
+                <div id="chatMessages" class="p-4 space-y-3 min-h-[200px] max-h-[350px] overflow-y-auto">
+                    <p class="text-center text-slate-400 text-sm py-4">ابدأ المحادثة...</p>
+                </div>
+                <div class="p-3 border-t border-slate-100 flex gap-2">
+                    <input type="text" id="clientMsgInput" placeholder="اكتب رسالتك..."
+                        class="flex-1 bg-slate-50 p-3 rounded-2xl border-none focus:ring-2 ring-blue-200 text-sm">
+                    <button onclick="sendClientMessage()"
+                        class="bg-blue-600 text-white p-3 rounded-2xl active:scale-95 transition-all">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- شريط التنقل السفلي للزبون -->
+    <nav class="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-100 shadow-xl z-50">
+        <div class="max-w-2xl mx-auto flex p-2 gap-1">
+            <button class="tab-btn active" id="navC_book" onclick="switchClientTab('book')">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                حجز موعد
+            </button>
+            <button class="tab-btn" id="navC_payment" onclick="switchClientTab('payment')">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 10h18M7 15h1m4 0h1m-7 4h12a3 3 0 003-3V8a3 3 0 00-3-3H6a3 3 0 00-3 3v8a3 3 0 003 3z"/></svg>
+                الدفع
+            </button>
+            <button class="tab-btn relative" id="navC_chat" onclick="switchClientTab('chat')">
+                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/></svg>
+                تواصل
+            </button>
+        </div>
+    </nav>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     مودال: محادثة الحلاق مع زبون معيّن
+══════════════════════════════════════════════════ -->
+<div id="barberChatModal" class="fixed inset-0 z-[300] modal-overlay hidden flex items-end justify-center">
+    <div class="bg-white rounded-t-[2.5rem] w-full max-w-sm shadow-2xl pb-6" style="max-height:92vh;display:flex;flex-direction:column;">
+        <div class="flex items-center justify-between px-6 pt-6 pb-4 border-b border-slate-100 sticky top-0 bg-white rounded-t-[2.5rem]">
+            <div>
+                <h3 class="font-black text-slate-800" id="barberChatClientName">اسم الزبون</h3>
+                <p class="text-xs text-slate-400" id="barberChatClientPhone">الهاتف</p>
+            </div>
+            <button onclick="closeBarberChat()" class="w-9 h-9 bg-slate-100 rounded-full flex items-center justify-center text-slate-500 font-bold text-lg">✕</button>
+        </div>
+        <div id="barberChatMessages" class="flex-1 p-4 space-y-3 overflow-y-auto min-h-[200px]">
+            <p class="text-center text-slate-400 text-sm py-4">لا توجد رسائل</p>
+        </div>
+        <div class="p-3 border-t border-slate-100 flex gap-2">
+            <input type="text" id="barberMsgInput" placeholder="ردّ على الزبون..."
+                class="flex-1 bg-slate-50 p-3 rounded-2xl border-none focus:ring-2 ring-slate-200 text-sm">
+            <button onclick="sendBarberMessage()"
+                class="main-gradient text-white p-3 rounded-2xl active:scale-95 transition-all">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/>
+                </svg>
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Toast -->
+<div id="toastEl" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-full text-sm font-bold z-[999] shadow-xl opacity-0 transition-opacity pointer-events-none">
+    رسالة
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════
+//  ⚙️ إعداد Firebase
+// ═══════════════════════════════════════════════════
+const firebaseConfig = {
+    apiKey: "AIzaSyAO48Yb8Hco3pF0JFrrYenlhGiW1URLQD0",
+    authDomain: "zayan-barber.firebaseapp.com",
+    projectId: "zayan-barber",
+    storageBucket: "zayan-barber.firebasestorage.app",
+    messagingSenderId: "327081419600",
+    appId: "1:327081419600:web:4299b1a8e7f8f7f81d0255"
+};
+
+// ── Stub أوفلاين: يُستخدم عندما يفشل تحميل Firebase ──
+function createOfflineStub() {
+    const noop     = () => Promise.resolve(null);
+    const noopSnap = () => ({ exists: false, data: () => ({}) });
+    const fakeDoc  = () => ({
+        get:    () => Promise.resolve(noopSnap()),
+        set:    noop,
+        update: noop,
+        delete: noop,
+        onSnapshot: (cb) => { if(cb) setTimeout(()=>cb({ docs:[], empty:true }),0); return () => {}; }
+    });
+    const fakeCol = () => ({
+        get:    () => Promise.resolve({ docs: [], empty: true }),
+        where:  () => fakeCol(),
+        limit:  () => fakeCol(),
+        orderBy:() => fakeCol(),
+        doc:    fakeDoc,
+        onSnapshot: (cb) => { if(cb) setTimeout(()=>cb({ docs:[], empty:true }),0); return () => {}; }
+    });
+
+    window.auth = {
+        currentUser: null,
+        // مهم: استدعاء cb بـ setTimeout حتى لا يتعارض مع initFirebase
+        onAuthStateChanged: (cb) => {
+            setTimeout(() => cb(null), 50);
+            return () => {};
+        },
+        signInWithEmailAndPassword:     () => Promise.reject({ code: 'auth/network-request-failed' }),
+        createUserWithEmailAndPassword: () => Promise.reject({ code: 'auth/network-request-failed' }),
+        signOut: () => Promise.resolve()
+    };
+    window.firestore = {
+        doc:        fakeDoc,
+        collection: fakeCol,
+        enablePersistence: noop
+    };
+    if (!window.firebase) {
+        window.firebase = {
+            firestore: { FieldValue: { increment: (n) => n } }
+        };
+    } else if (!window.firebase.firestore) {
+        window.firebase.firestore = { FieldValue: { increment: (n) => n } };
+    } else if (!window.firebase.firestore.FieldValue) {
+        window.firebase.firestore.FieldValue = { increment: (n) => n };
+    }
+}
+
+// ── تهيئة Firebase أو الـ Stub ──
+let auth, firestore;
+
+async function initFirebase() {
+    const ok = await loadFirebase();
+
+    if (ok && window.firebase) {
+        try {
+            if (!window.firebase.apps.length) {
+                window.firebase.initializeApp(firebaseConfig);
+            }
+            auth      = window.firebase.auth();
+            firestore = window.firebase.firestore();
+            firestore.enablePersistence({ synchronizeTabs: true })
+                .catch(e => console.warn('persistence:', e.code));
+            window.firebaseReady = true; // ← مهم جداً
+            console.log('✅ Firebase جاهز');
+            return true;
+        } catch(e) {
+            console.warn('خطأ Firebase:', e.message);
+        }
+    }
+
+    window.firebaseReady = false;
+    console.warn('⚠️ Firebase غير متاح — وضع أوفلاين');
+    createOfflineStub();
+    return false;
+}
+
+// ── ضمان وجود UID دائماً (مسجّل أو مجهول) ──
+async function ensureAuth() {
+    if (!window.firebaseReady || !auth) return null;
+    if (auth.currentUser) return auth.currentUser;
+    try {
+        const cred = await auth.signInAnonymously();
+        currentUser = cred.user;
+        // حفظ role = client حتى لا يفتح onAuthStateChanged واجهة الحلاق
+        await idbPut('settings', { key: `profile_${cred.user.uid}`, value: { role: 'client', name: 'زبون', uid: cred.user.uid } });
+        return cred.user;
+    } catch(e) {
+        console.warn('Anonymous auth فشل:', e.code);
+        return null;
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  🗄️ قاعدة بيانات IndexedDB
+// ═══════════════════════════════════════════════════
+const DB_NAME    = 'ZayanDB';
+const DB_VERSION = 1;
+let idb = null;
+
+function openIDB() {
+    return new Promise((resolve, reject) => {
+        const req = indexedDB.open(DB_NAME, DB_VERSION);
+        req.onupgradeneeded = e => {
+            const db = e.target.result;
+            // جدول السجلات اليومية
+            if (!db.objectStoreNames.contains('records')) {
+                const rs = db.createObjectStore('records', { keyPath: 'localId' });
+                rs.createIndex('synced', 'synced', { unique: false });
+                rs.createIndex('uid',    'uid',    { unique: false });
+            }
+            // جدول الزبائن الدائمين
+            if (!db.objectStoreNames.contains('customers')) {
+                const cs = db.createObjectStore('customers', { keyPath: 'localId' });
+                cs.createIndex('uid', 'uid', { unique: false });
+            }
+            // جدول الحجوزات
+            if (!db.objectStoreNames.contains('appointments')) {
+                const as = db.createObjectStore('appointments', { keyPath: 'localId' });
+                as.createIndex('uid',    'uid',    { unique: false });
+                as.createIndex('synced', 'synced', { unique: false });
+            }
+            // جدول الرسائل
+            if (!db.objectStoreNames.contains('messages')) {
+                const ms = db.createObjectStore('messages', { keyPath: 'localId' });
+                ms.createIndex('conversationId', 'conversationId', { unique: false });
+            }
+            // جدول الإعدادات
+            if (!db.objectStoreNames.contains('settings')) {
+                db.createObjectStore('settings', { keyPath: 'key' });
+            }
+        };
+        req.onsuccess = e => { idb = e.target.result; resolve(idb); };
+        req.onerror   = e => reject(e.target.error);
+    });
+}
+
+// دوال مساعدة لـ IndexedDB
+function idbPut(store, obj) {
+    return new Promise((res, rej) => {
+        const tx = idb.transaction(store, 'readwrite');
+        const req = tx.objectStore(store).put(obj);
+        req.onsuccess = () => res(req.result);
+        req.onerror   = () => rej(req.error);
+    });
+}
+function idbGetAll(store) {
+    return new Promise((res, rej) => {
+        const tx = idb.transaction(store, 'readonly');
+        const req = tx.objectStore(store).getAll();
+        req.onsuccess = () => res(req.result);
+        req.onerror   = () => rej(req.error);
+    });
+}
+function idbGet(store, key) {
+    return new Promise((res, rej) => {
+        const tx = idb.transaction(store, 'readonly');
+        const req = tx.objectStore(store).get(key);
+        req.onsuccess = () => res(req.result);
+        req.onerror   = () => rej(req.error);
+    });
+}
+function idbDelete(store, key) {
+    return new Promise((res, rej) => {
+        const tx = idb.transaction(store, 'readwrite');
+        const req = tx.objectStore(store).delete(key);
+        req.onsuccess = () => res();
+        req.onerror   = () => rej(req.error);
+    });
+}
+function idbGetByIndex(store, index, value) {
+    return new Promise((res, rej) => {
+        const tx  = idb.transaction(store, 'readonly');
+        const req = tx.objectStore(store).index(index).getAll(value);
+        req.onsuccess = () => res(req.result);
+        req.onerror   = () => rej(req.error);
+    });
+}
+
+// توليد UUID محلي
+function genUUID() {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+        const r = Math.random() * 16 | 0;
+        return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16);
+    });
+}
+
+// ═══════════════════════════════════════════════════
+//  🔄 مزامنة مع Firestore
+// ═══════════════════════════════════════════════════
+let isSyncing = false;
+let currentUser = null;
+
+async function syncToFirestore() {
+    if (!currentUser || isSyncing || !navigator.onLine) return;
+    isSyncing = true;
+    updateSyncBar('syncing');
+
+    try {
+        const uid = currentUser.uid;
+
+        // مزامنة السجلات
+        const unsyncedRecords = (await idbGetAll('records'))
+            .filter(r => r.uid === uid && !r.synced);
+        for (const rec of unsyncedRecords) {
+            await firestore.doc(`users/${uid}/records/${rec.localId}`).set(rec);
+            await idbPut('records', { ...rec, synced: true });
+        }
+
+        // مزامنة الزبائن
+        const unsyncedCustomers = (await idbGetAll('customers'))
+            .filter(c => c.uid === uid && !c.synced);
+        for (const cust of unsyncedCustomers) {
+            await firestore.doc(`users/${uid}/customers/${cust.localId}`).set(cust);
+            await idbPut('customers', { ...cust, synced: true });
+        }
+
+        // مزامنة الحجوزات
+        const unsyncedAppts = (await idbGetAll('appointments'))
+            .filter(a => !a.synced);
+        for (const appt of unsyncedAppts) {
+            // الحجوزات تُكتب تحت UID الحلاق
+            const targetUid = appt.barberUid || uid;
+            await firestore.doc(`users/${targetUid}/appointments/${appt.localId}`).set(appt);
+            await idbPut('appointments', { ...appt, synced: true });
+        }
+
+        // مزامنة الرسائل
+        const unsyncedMsgs = (await idbGetAll('messages'))
+            .filter(m => !m.synced);
+        for (const msg of unsyncedMsgs) {
+            const convId = msg.conversationId;
+            await firestore.doc(`conversations/${convId}/messages/${msg.localId}`).set(msg);
+            await idbPut('messages', { ...msg, synced: true });
+        }
+
+        updateSyncBar('online');
+    } catch (err) {
+        console.error('خطأ في المزامنة:', err);
+        updateSyncBar('offline');
+    }
+
+    isSyncing = false;
+}
+
+// الاستماع للاتصال
+window.addEventListener('online',  () => { updateSyncBar('syncing'); syncToFirestore(); });
+window.addEventListener('offline', () => updateSyncBar('offline'));
+
+async function countUnsyncedRecords() {
+    if (!currentUser) return 0;
+    const all = await idbGetAll('records');
+    return all.filter(r => r.uid === currentUser.uid && !r.synced).length;
+}
+
+async function updateSyncBar(status) {
+    const bar  = document.getElementById('syncBar');
+    const text = document.getElementById('syncBarText');
+    bar.classList.remove('hidden');
+    bar.className = bar.className.replace(/sync-\w+/g, '');
+
+    if (status === 'offline') {
+        const n = await countUnsyncedRecords();
+        bar.classList.add('sync-offline');
+        text.textContent = `🔴 أوفلاين — ${n} سجل في انتظار المزامنة`;
+    } else if (status === 'syncing') {
+        bar.classList.add('sync-syncing');
+        text.textContent = '🔄 جارٍ المزامنة...';
+    } else {
+        bar.classList.add('sync-online');
+        text.textContent = '🟢 متصل — تمت المزامنة';
+        setTimeout(() => bar.classList.add('hidden'), 3000);
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  🔑 المصادقة - Firebase Auth
+// ═══════════════════════════════════════════════════
+let currentRole  = 'barber'; // 'barber' | 'client'
+let barberUID    = null;      // uid الحلاق المستهدف (للزبون)
+let barberPhoneMap = {};      // phone -> uid للبحث
+
+// اختيار الدور
+function showBarberAuth() {
+    currentRole = 'barber';
+    showAuthScreen('barber');
+}
+function showClientAuth() {
+    currentRole = 'client';
+    showClientPhoneScreen();
+}
+function showClientPhoneScreen() {
+    document.getElementById('roleScreen').classList.add('hidden');
+    document.getElementById('clientPhoneScreen').classList.remove('hidden');
+}
+function showAuthScreen(role) {
+    currentRole = role;
+    document.getElementById('roleScreen').classList.add('hidden');
+    document.getElementById('clientPhoneScreen').classList.add('hidden');
+    document.getElementById('authScreen').classList.remove('hidden');
+    document.getElementById('loginForm').classList.remove('hidden');
+    document.getElementById('registerForm').classList.add('hidden');
+
+    if (role === 'barber') {
+        document.getElementById('authScreenIcon').textContent  = '💈';
+        document.getElementById('authScreenTitle').textContent = 'تسجيل دخول الحلاق';
+        document.getElementById('authScreenSub').textContent   = 'أدخل بياناتك لإدارة محلك';
+        document.getElementById('regPhone').classList.remove('hidden');
+    } else {
+        document.getElementById('authScreenIcon').textContent  = '👤';
+        document.getElementById('authScreenTitle').textContent = 'تسجيل دخول الزبون';
+        document.getElementById('authScreenSub').textContent   = 'أدخل بياناتك لحجز مواعيدك';
+        document.getElementById('regPhone').classList.add('hidden');
+    }
+}
+
+function backToRoleScreen() {
+    document.getElementById('authScreen').classList.add('hidden');
+    document.getElementById('clientPhoneScreen').classList.add('hidden');
+    document.getElementById('roleScreen').classList.remove('hidden');
+}
+
+function showRegisterForm() {
+    document.getElementById('loginForm').classList.add('hidden');
+    document.getElementById('registerForm').classList.remove('hidden');
+}
+function showLoginForm() {
+    document.getElementById('registerForm').classList.add('hidden');
+    document.getElementById('loginForm').classList.remove('hidden');
+}
+
+// دخول الزبون برقم هاتف الحلاق
+async function doClientLogin() {
+    const phone = document.getElementById('barberPhoneInput').value.trim();
+    if (!phone) { showClientPhoneError('أدخل رقم هاتف الحلاق'); return; }
+
+    showClientPhoneError('');
+    // البحث عن الحلاق في Firestore بالهاتف
+    try {
+        const snap = await firestore.collection('barbers').where('phone', '==', phone).limit(1).get();
+        if (snap.empty) { showClientPhoneError('لم يُعثر على حلاق بهذا الرقم'); return; }
+        const barberDoc = snap.docs[0];
+        barberUID = barberDoc.id;
+        // حفظ UID الحلاق محلياً لاستخدامه في الواجهة
+        await idbPut('settings', { key: 'guestBarberUID',  value: barberUID });
+        await idbPut('settings', { key: 'guestBarberName', value: barberDoc.data().name || 'الحلاق' });
+        openClientGuestApp(barberDoc.data().name || 'الحلاق');
+    } catch(err) {
+        if (!navigator.onLine) {
+            // وضع أوفلاين: جرب من الكاش
+            const cached = await idbGet('settings', 'guestBarberUID');
+            if (cached) {
+                barberUID = cached.value;
+                const cachedName = await idbGet('settings', 'guestBarberName');
+                openClientGuestApp(cachedName?.value || 'الحلاق');
+            } else {
+                showClientPhoneError('لا يوجد اتصال ولا بيانات محفوظة');
+            }
+        } else {
+            showClientPhoneError('خطأ في الاتصال: ' + err.message);
+        }
+    }
+}
+function showClientPhoneError(msg) {
+    const el = document.getElementById('clientPhoneError');
+    el.textContent = msg;
+    el.classList.toggle('hidden', !msg);
+}
+
+// ── تحويل اسم المستخدم إلى بريد وهمي داخلي ──
+function usernameToEmail(username) {
+    // تنظيف اسم المستخدم من الرموز غير المسموحة في البريد
+    const clean = username.trim().toLowerCase()
+        .replace(/\s+/g, '_')
+        .replace(/[^a-z0-9_\u0600-\u06ff.-]/g, '');
+    return clean + '@zayan-barber.app';
+}
+
+function validateUsername(username) {
+    if (!username) return 'أدخل اسم المستخدم';
+    if (username.length < 3) return 'اسم المستخدم 3 أحرف على الأقل';
+    if (username.length > 30) return 'اسم المستخدم 30 حرفاً كحد أقصى';
+    return null;
+}
+
+// تسجيل الدخول باسم المستخدم
+async function doLogin() {
+    const username = document.getElementById('authUsername').value.trim();
+    const pass     = document.getElementById('authPass').value;
+
+    const usernameErr = validateUsername(username);
+    if (usernameErr) { showAuthError(usernameErr); return; }
+    if (!pass) { showAuthError('أدخل كلمة المرور'); return; }
+
+    // تأكد من جاهزية Firebase
+    if (!window.firebaseReady || !auth || !auth.signInWithEmailAndPassword) {
+        showAuthError('جارٍ تحميل الخدمة... أعد المحاولة بعد ثانية');
+        // حاول إعادة التهيئة
+        await initFirebase();
+        if (!window.firebaseReady) { showAuthError('لا يوجد اتصال بالإنترنت'); return; }
+    }
+
+    const fakeEmail = usernameToEmail(username);
+    document.getElementById('loginBtn').textContent = 'جارٍ الدخول...';
+    document.getElementById('authError').classList.add('hidden');
+
+    try {
+        const cred = await auth.signInWithEmailAndPassword(fakeEmail, pass);
+        // فتح الواجهة مباشرة بدون انتظار onAuthStateChanged
+        currentUser = cred.user;
+        document.getElementById('loginBtn').textContent = 'تسجيل الدخول';
+        document.getElementById('authScreen').classList.add('hidden');
+        await openAfterLogin(cred.user);
+    } catch(err) {
+        document.getElementById('loginBtn').textContent = 'تسجيل الدخول';
+        showAuthError(translateAuthError(err.code));
+    }
+}
+
+// دالة مشتركة لفتح الواجهة بعد الدخول
+async function openAfterLogin(user) {
+    let role = 'barber', name = 'المستخدم';
+    try {
+        const cached = await idbGet('settings', `profile_${user.uid}`);
+        if (cached?.value) { role = cached.value.role || role; name = cached.value.name || name; }
+        if (navigator.onLine) {
+            const pd = await firestore.doc(`users/${user.uid}/profile/info`).get();
+            if (pd.exists) {
+                const p = pd.data();
+                role = p.role || role; name = p.name || name;
+                await idbPut('settings', { key:`profile_${user.uid}`, value:p });
+            }
+        }
+    } catch(e) { console.warn(e.message); }
+
+    currentRole = role;
+    if (role === 'barber') {
+        openBarberApp(name);
+    } else {
+        const cu = await idbGet('settings', 'guestBarberUID');
+        const cn = await idbGet('settings', 'guestBarberName');
+        if (cu) barberUID = cu.value;
+        openClientLoggedApp(name, cn?.value || 'الحلاق');
+    }
+    if (navigator.onLine) syncToFirestore();
+    else updateSyncBar('offline');
+}
+async function doRegister() {
+    const name     = document.getElementById('regName').value.trim();
+    const username = document.getElementById('regUsername').value.trim();
+    const phone    = document.getElementById('regPhone').value.trim();
+    const pass     = document.getElementById('regPass').value;
+
+    if (!name)     { showRegError('أدخل الاسم الكامل'); return; }
+    const usernameErr = validateUsername(username);
+    if (usernameErr) { showRegError(usernameErr); return; }
+    if (currentRole === 'barber' && !phone) { showRegError('رقم الهاتف مطلوب للحلاق'); return; }
+    if (!pass || pass.length < 6) { showRegError('كلمة المرور 6 أحرف على الأقل'); return; }
+
+    const fakeEmail = usernameToEmail(username);
+    document.getElementById('registerBtn').textContent = 'جارٍ الإنشاء...';
+    document.getElementById('regError').classList.add('hidden');
+
+    try {
+        // التحقق أن اسم المستخدم غير مستخدم
+        const usernameSnap = await firestore.collection('usernames').doc(username.toLowerCase()).get();
+        if (usernameSnap.exists) {
+            document.getElementById('registerBtn').textContent = 'إنشاء الحساب';
+            showRegError('اسم المستخدم مستخدم مسبقاً — اختر اسماً آخر');
+            return;
+        }
+
+        const cred = await auth.createUserWithEmailAndPassword(fakeEmail, pass);
+        const uid  = cred.user.uid;
+
+        // حجز اسم المستخدم
+        await firestore.doc(`usernames/${username.toLowerCase()}`).set({ uid, username, createdAt: new Date().toISOString() });
+
+        // حفظ بيانات المستخدم في Firestore
+        const userData = {
+            uid, name, username: username.toLowerCase(),
+            email: fakeEmail, role: currentRole,
+            createdAt: new Date().toISOString()
+        };
+        if (currentRole === 'barber') userData.phone = phone;
+
+        // ── مهم: حفظ في IDB أولاً حتى يقرأه onAuthStateChanged فوراً ──
+        await idbPut('settings', { key: `profile_${uid}`, value: userData });
+        await firestore.doc(`users/${uid}/profile/info`).set(userData);
+
+        if (currentRole === 'barber') {
+            await firestore.doc(`barbers/${uid}`).set({ uid, name, phone, username: username.toLowerCase() });
+        }
+
+        toast('تم إنشاء الحساب بنجاح ✓');
+        // فتح الواجهة مباشرة
+        currentUser = cred.user;
+        document.getElementById('authScreen').classList.add('hidden');
+        document.getElementById('registerBtn').textContent = 'إنشاء الحساب';
+        await openAfterLogin(cred.user);
+    } catch(err) {
+        document.getElementById('registerBtn').textContent = 'إنشاء الحساب';
+        if (err.code === 'auth/email-already-in-use') {
+            showRegError('اسم المستخدم مستخدم مسبقاً — اختر اسماً آخر');
+        } else {
+            showRegError(translateAuthError(err.code));
+        }
+    }
+}
+
+function showAuthError(msg) {
+    const el = document.getElementById('authError');
+    el.textContent = msg; el.classList.remove('hidden');
+}
+function showRegError(msg) {
+    const el = document.getElementById('regError');
+    el.textContent = msg; el.classList.remove('hidden');
+}
+function translateAuthError(code) {
+    const map = {
+        'auth/user-not-found':         'اسم المستخدم غير موجود',
+        'auth/wrong-password':         'كلمة المرور خاطئة',
+        'auth/invalid-credential':     'اسم المستخدم أو كلمة المرور خاطئة',
+        'auth/invalid-email':          'اسم المستخدم غير صحيح',
+        'auth/email-already-in-use':   'اسم المستخدم مستخدم مسبقاً',
+        'auth/weak-password':          'كلمة المرور ضعيفة — 6 أحرف على الأقل',
+        'auth/too-many-requests':      'محاولات كثيرة — انتظر قليلاً',
+        'auth/network-request-failed': 'لا يوجد اتصال بالإنترنت',
+        'auth/operation-not-allowed':  'طريقة الدخول غير مفعّلة في Firebase',
+    };
+    return map[code] || 'خطأ غير معروف: ' + code;
+}
+
+// تسجيل الخروج
+async function doSignOut() {
+    if (!confirm('هل تريد تسجيل الخروج؟')) return;
+    await auth.signOut();
+    location.reload();
+}
+
+// ═══════════════════════════════════════════════════
+//  💈 واجهة الحلاق
+// ═══════════════════════════════════════════════════
+let db = [], customers = [];
+
+function openBarberApp(name) {
+    document.getElementById('barberName').textContent = name;
+    document.getElementById('barberApp').classList.remove('hidden');
+    document.getElementById('clientApp').classList.add('hidden');
+    loadBarberData();
+}
+
+async function loadBarberData() {
+    if (!currentUser) return;
+    const uid = currentUser.uid;
+
+    // تحميل السجلات من IndexedDB
+    db = (await idbGetAll('records')).filter(r => r.uid === uid);
+    db.sort((a,b) => b.id - a.id);
+
+    // تحميل الزبائن
+    customers = (await idbGetAll('customers')).filter(c => c.uid === uid);
+
+    // تحميل الإعدادات
+    const shopOpen  = await idbGet('settings', 'shopOpen');
+    const shopClose = await idbGet('settings', 'shopClose');
+    if (shopOpen)  document.getElementById('shopOpen').value  = shopOpen.value;
+    if (shopClose) document.getElementById('shopClose').value = shopClose.value;
+
+    // تحميل بيانات الدفع
+    const payInfo = await idbGet('settings', 'paymentInfo');
+    if (payInfo) {
+        const d = payInfo.value;
+        document.getElementById('payAccountType').value = d.type   || 'phone';
+        document.getElementById('payAccountNum').value  = d.number || '';
+        document.getElementById('payAccountName').value = d.name   || '';
+        document.getElementById('payNotes').value       = d.notes  || '';
+    }
+
+    renderData();
+    updateDatalist();
+    renderCustomers();
+    loadAppointments();
+    loadConversations();
+
+    // إذا كان أونلاين: استمع لـ Firestore للحصول على البيانات الجديدة
+    if (navigator.onLine) {
+        listenBarberFirestore(uid);
+    }
+}
+
+// الاستماع لـ Firestore للحلاق
+function listenBarberFirestore(uid) {
+    // استمع للسجلات
+    firestore.collection(`users/${uid}/records`).onSnapshot(async snap => {
+        for (const doc of snap.docs) {
+            const data = { ...doc.data(), synced: true };
+            await idbPut('records', data);
+        }
+        db = (await idbGetAll('records')).filter(r => r.uid === uid);
+        db.sort((a,b) => b.id - a.id);
+        renderData();
+    });
+
+    // استمع للحجوزات
+    firestore.collection(`users/${uid}/appointments`).onSnapshot(async snap => {
+        for (const doc of snap.docs) {
+            await idbPut('appointments', { ...doc.data(), synced: true });
+        }
+        renderAppointmentsFromIDB(uid);
+    });
+
+    // استمع للمحادثات
+    firestore.collection('conversations').where('barberUid', '==', uid).onSnapshot(async snap => {
+        renderConversationsFromFirestore(snap);
+    });
+}
+
+// ---- السجل اليومي (مطابق للأصلي) ----
+async function addNewEntry() {
+    const name   = document.getElementById('nameInp').value.trim();
+    const amount = parseFloat(document.getElementById('amountInp').value);
+    const phone  = document.getElementById('phoneInp').value.trim();
+    const status = document.getElementById('statusInp').value;
+
+    if (!name || isNaN(amount)) { toast('⚠️ أكمل البيانات'); return; }
+    if (!currentUser) { toast('⚠️ يجب تسجيل الدخول أولاً'); return; }
+
+    const date = new Date();
+    const timeStr = `${date.toLocaleDateString('ar-EG')} | ${date.toLocaleTimeString('ar-EG',{hour:'2-digit',minute:'2-digit'})}`;
+    const localId = genUUID();
+    const uid     = currentUser.uid;
+
+    const rec = {
+        localId, uid,
+        id: Date.now(),
+        name, amount,
+        phone: phone || 'لا يوجد',
+        status, time: timeStr,
+        synced: false,
+        createdAt: new Date().toISOString()
+    };
+
+    await idbPut('records', rec);
+    db.unshift(rec);
+
+    document.getElementById('nameInp').value   = '';
+    document.getElementById('amountInp').value = '';
+    document.getElementById('phoneInp').value  = '';
+
+    renderData();
+    if (navigator.onLine) syncToFirestore();
+    else updateSyncBar('offline');
+}
+
+function renderData() {
+    const list   = document.getElementById('dataList');
+    const search = document.getElementById('searchInp')?.value?.toLowerCase() || '';
+    let paid = 0, unpaid = 0;
+
+    list.innerHTML = db.filter(i => i.name.toLowerCase().includes(search)).map(item => {
+        if (item.status === 'paid') paid += item.amount;
+        else unpaid += item.amount;
+        return `
+        <div class="bg-white p-5 rounded-3xl shadow-sm flex justify-between items-center border border-slate-50 animate-fade">
+            <div class="flex-1">
+                <h4 class="font-black text-slate-800">${item.name}</h4>
+                <p class="text-[9px] text-slate-400 mb-2 font-bold">${item.time}${!item.synced ? ' 🔴' : ''}</p>
+                <div class="flex items-center gap-2">
+                    <span class="text-xl font-black text-slate-900">${item.amount} ₪</span>
+                    <button onclick="toggleStatus('${item.localId}')"
+                        class="px-3 py-1 rounded-full text-[9px] font-black ${item.status==='paid'?'status-paid':'status-unpaid'}">
+                        ${item.status==='paid'?'كاش':'دين'}
+                    </button>
+                </div>
+            </div>
+            <div class="flex flex-col gap-2">
+                <button onclick="deleteItem('${item.localId}')" class="p-2 text-slate-200 hover:text-red-500">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                </button>
+                ${(item.phone && item.phone !== 'لا يوجد') ? `
+                <button onclick="sendSMS('${item.localId}')" class="p-2 bg-blue-50 text-blue-600 rounded-xl flex items-center justify-center">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z"/>
+                    </svg>
+                </button>` : ''}
+            </div>
+        </div>`;
+    }).join('');
+
+    document.getElementById('totalPaid').textContent   = paid;
+    document.getElementById('totalUnpaid').textContent = unpaid;
+
+    if (db.length === 0)
+        list.innerHTML = '<p class="text-center py-10 text-slate-400 text-sm">لا توجد عمليات بعد</p>';
+}
+
+async function toggleStatus(localId) {
+    const item = db.find(x => x.localId === localId);
+    if (!item) return;
+    item.status = item.status === 'paid' ? 'unpaid' : 'paid';
+    item.synced = false;
+    await idbPut('records', item);
+    renderData();
+    if (navigator.onLine) syncToFirestore();
+}
+
+async function deleteItem(localId) {
+    if (!confirm('حذف هذه العملية؟')) return;
+    db = db.filter(x => x.localId !== localId);
+    await idbDelete('records', localId);
+    // حذف من Firestore إن كان متصلاً
+    if (navigator.onLine && currentUser) {
+        try { await firestore.doc(`users/${currentUser.uid}/records/${localId}`).delete(); } catch(e){}
+    }
+    renderData();
+}
+
+function sendSMS(localId) {
+    const item = db.find(x => x.localId === localId);
+    if (!item || !item.phone || item.phone === 'لا يوجد') { toast('لا يوجد رقم هاتف'); return; }
+    const msg = `صالون محمود الزيان%0Aزبوننا الكريم: ${item.name}%0Aالمبلغ المستحق: ${item.amount} ₪%0Aشكراً لزيارتكم.`;
+    window.location.href = `sms:${item.phone}?body=${msg}`;
+}
+
+function handleNameInput() {
+    const name  = document.getElementById('nameInp').value.trim();
+    const match = customers.find(c => c.name === name);
+    if (match) document.getElementById('phoneInp').value = match.phone;
+}
+
+function updateDatalist() {
+    document.getElementById('savedNames').innerHTML = customers
+        .map(c => `<option value="${c.name}">${c.phone||''}</option>`).join('');
+}
+
+// ---- الزبائن الدائمين ----
+async function saveCustomer() {
+    const name  = document.getElementById('cName').value.trim();
+    const phone = document.getElementById('cPhone').value.trim();
+    if (!name) { toast('الاسم مطلوب'); return; }
+    if (!currentUser) { toast('يجب تسجيل الدخول'); return; }
+
+    const cust = {
+        localId: genUUID(), uid: currentUser.uid,
+        id: Date.now(), name, phone,
+        synced: false, createdAt: new Date().toISOString()
+    };
+    customers.unshift(cust);
+    await idbPut('customers', cust);
+    document.getElementById('cName').value  = '';
+    document.getElementById('cPhone').value = '';
+    renderCustomers(); updateDatalist();
+    toast('تمت الإضافة للمحفوظات ✓');
+    if (navigator.onLine) syncToFirestore();
+}
+
+function renderCustomers() {
+    const list = document.getElementById('customerList');
+    list.innerHTML = customers.map(c => `
+        <div class="bg-white p-4 rounded-2xl shadow-sm flex justify-between items-center border border-blue-50">
+            <div>
+                <p class="font-black text-slate-800">${c.name}</p>
+                <p class="text-xs text-blue-600 font-bold">${c.phone||'بدون رقم'}</p>
+            </div>
+            <button onclick="deleteCustomer('${c.localId}')" class="text-red-300 hover:text-red-600 p-2">
+                <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                </svg>
+            </button>
+        </div>`).join('');
+    if (customers.length === 0)
+        list.innerHTML = '<p class="text-center text-slate-400 py-4">قائمة المحفوظات فارغة</p>';
+}
+
+async function deleteCustomer(localId) {
+    if (!confirm('حذف الزبون؟')) return;
+    customers = customers.filter(c => c.localId !== localId);
+    await idbDelete('customers', localId);
+    if (navigator.onLine && currentUser) {
+        try { await firestore.doc(`users/${currentUser.uid}/customers/${localId}`).delete(); } catch(e){}
+    }
+    renderCustomers(); updateDatalist();
+}
+
+// ---- إعدادات المحل ----
+async function saveShopSettings() {
+    const open  = document.getElementById('shopOpen').value;
+    const close = document.getElementById('shopClose').value;
+    const dur   = document.getElementById('slotDuration').value;
+
+    await idbPut('settings', { key:'shopOpen',  value: open });
+    await idbPut('settings', { key:'shopClose', value: close });
+    await idbPut('settings', { key:'slotDur',   value: dur });
+
+    if (navigator.onLine && currentUser) {
+        await firestore.doc(`users/${currentUser.uid}/profile/shopSettings`).set({
+            open, close, duration: dur, updatedAt: new Date().toISOString()
+        });
+    }
+    toast('تم حفظ إعدادات المحل ✓');
+}
+
+// ---- بيانات الدفع ----
+async function savePaymentInfo() {
+    const info = {
+        type:   document.getElementById('payAccountType').value,
+        number: document.getElementById('payAccountNum').value.trim(),
+        name:   document.getElementById('payAccountName').value.trim(),
+        notes:  document.getElementById('payNotes').value.trim(),
+        updatedAt: new Date().toISOString()
+    };
+
+    // حفظ محلياً
+    await idbPut('settings', { key:'paymentInfo', value: info });
+
+    if (navigator.onLine && currentUser) {
+        const uid = currentUser.uid;
+        try {
+            // ── المسار الأول: ضمن بيانات المستخدم (للنسخ الاحتياطي) ──
+            await firestore.doc(`users/${uid}/profile/paymentInfo`).set(info);
+
+            // ── المسار الثاني: ضمن بيانات الحلاق العامة (يقرأها الزبون) ──
+            await firestore.doc(`barbers/${uid}`).set({ paymentInfo: info }, { merge: true });
+
+            toast('تم حفظ بيانات الدفع ✓');
+        } catch(e) {
+            console.error('خطأ في حفظ بيانات الدفع:', e);
+            toast('⚠️ تعذّر الحفظ في السحابة — محفوظ محلياً');
+        }
+    } else {
+        toast('تم حفظ بيانات الدفع محلياً ✓');
+    }
+}
+
+// ---- الحجوزات ----
+async function loadAppointments() {
+    if (!currentUser) return;
+    await renderAppointmentsFromIDB(currentUser.uid);
+}
+
+async function renderAppointmentsFromIDB(uid) {
+    const appts = (await idbGetAll('appointments'))
+        .filter(a => a.barberUid === uid)
+        .sort((a,b) => new Date(a.datetime) - new Date(b.datetime));
+
+    const list = document.getElementById('appointmentsList');
+    const pendingCount = appts.filter(a => a.status === 'pending').length;
+    document.getElementById('pendingCount').textContent = `${pendingCount} طلب`;
+
+    if (appts.length === 0) {
+        list.innerHTML = '<p class="text-center text-slate-400 py-8">لا توجد حجوزات بعد</p>';
+        return;
+    }
+
+    list.innerHTML = appts.map(a => `
+        <div class="appt-card ${a.status}">
+            <div class="flex justify-between items-start mb-2">
+                <div>
+                    <p class="font-black text-slate-800">${a.clientName}</p>
+                    <p class="text-xs text-slate-500">${a.clientPhone || ''}</p>
+                </div>
+                <span class="text-xs font-bold px-3 py-1 rounded-full ${
+                    a.status==='confirmed' ? 'bg-emerald-100 text-emerald-700' :
+                    a.status==='pending'   ? 'bg-amber-100 text-amber-700' :
+                                             'bg-red-100 text-red-700'}">
+                    ${a.status==='confirmed'?'مؤكد': a.status==='pending'?'بانتظار الموافقة':'ملغى'}
+                </span>
+            </div>
+            <p class="text-sm font-bold text-slate-700 mb-1">📅 ${formatDateTime(a.datetime)}</p>
+            ${a.note ? `<p class="text-xs text-slate-400 mb-2">${a.note}</p>` : ''}
+            ${a.status === 'pending' ? `
+            <div class="flex gap-2 mt-2">
+                <button onclick="confirmAppt('${a.localId}')"
+                    class="flex-1 bg-emerald-500 text-white text-xs font-black py-2 rounded-xl active:scale-95">
+                    ✅ تأكيد
+                </button>
+                <button onclick="cancelAppt('${a.localId}')"
+                    class="flex-1 bg-red-100 text-red-600 text-xs font-black py-2 rounded-xl active:scale-95">
+                    ❌ رفض
+                </button>
+                <button onclick="deleteAppt('${a.localId}')"
+                    class="bg-slate-100 text-slate-500 text-xs font-black px-3 py-2 rounded-xl active:scale-95">
+                    🗑
+                </button>
+            </div>` : `
+            <div class="flex justify-end mt-2">
+                <button onclick="deleteAppt('${a.localId}')"
+                    class="bg-slate-100 text-slate-400 text-xs font-bold px-3 py-1.5 rounded-xl active:scale-95">
+                    🗑 حذف
+                </button>
+            </div>`}
+        </div>`).join('');
+}
+
+// حذف حجز (الزبون)
+async function deleteMyAppt(localId) {
+    if (!confirm('هل تريد إلغاء وحذف هذا الحجز؟')) return;
+    await idbDelete('appointments', localId);
+    // حذف من Firestore
+    if (navigator.onLine && barberUID) {
+        try {
+            await firestore.doc(`users/${barberUID}/appointments/${localId}`).delete();
+        } catch(e) { console.error(e); }
+    }
+    loadMyAppointments();
+    toast('تم حذف الحجز ✓');
+}
+
+// حذف حجز (الحلاق)
+async function deleteAppt(localId) {
+    if (!confirm('حذف هذا الحجز نهائياً؟')) return;
+    await idbDelete('appointments', localId);
+    if (navigator.onLine && currentUser) {
+        try {
+            await firestore.doc(`users/${currentUser.uid}/appointments/${localId}`).delete();
+        } catch(e) { console.error(e); }
+    }
+    renderAppointmentsFromIDB(currentUser.uid);
+    toast('تم حذف الحجز ✓');
+}
+
+async function confirmAppt(localId) {
+    const appt = await idbGet('appointments', localId);
+    if (!appt) return;
+    appt.status = 'confirmed'; appt.synced = false;
+    await idbPut('appointments', appt);
+    if (navigator.onLine) syncToFirestore();
+    if (currentUser) renderAppointmentsFromIDB(currentUser.uid);
+    toast('تم تأكيد الحجز ✓');
+}
+
+async function cancelAppt(localId) {
+    if (!confirm('رفض هذا الطلب؟')) return;
+    const appt = await idbGet('appointments', localId);
+    if (!appt) return;
+    appt.status = 'cancelled'; appt.synced = false;
+    await idbPut('appointments', appt);
+    if (navigator.onLine) syncToFirestore();
+    if (currentUser) renderAppointmentsFromIDB(currentUser.uid);
+    toast('تم رفض الطلب');
+}
+
+function formatDateTime(dtStr) {
+    if (!dtStr) return '';
+    try {
+        const dt = new Date(dtStr);
+        return dt.toLocaleDateString('ar-EG', {weekday:'short', year:'numeric', month:'short', day:'numeric'})
+            + ' — ' + dt.toLocaleTimeString('ar-EG', {hour:'2-digit', minute:'2-digit'});
+    } catch(e) { return dtStr; }
+}
+
+// ---- المحادثات ----
+let activeConvId = null;
+let activeConvUnsub = null;
+
+async function loadConversations() {
+    if (!currentUser) return;
+    if (navigator.onLine) return; // يُعالَج عبر Firestore listener
+    // أوفلاين: من IndexedDB
+    renderConversationsLocal();
+}
+
+async function renderConversationsLocal() {
+    // الرسائل المحفوظة محلياً
+    const msgs = await idbGetAll('messages');
+    const convMap = {};
+    msgs.forEach(m => {
+        if (!convMap[m.conversationId]) convMap[m.conversationId] = [];
+        convMap[m.conversationId].push(m);
+    });
+    renderConversationCards(Object.entries(convMap).map(([id, msgs]) => ({
+        id,
+        clientName:  msgs[0]?.senderName || 'زبون',
+        clientPhone: msgs[0]?.senderPhone || '',
+        lastMsg:     msgs[msgs.length-1]?.text || '',
+        unread:      msgs.filter(m => !m.readByBarber).length
+    })));
+}
+
+function renderConversationsFromFirestore(snap) {
+    const list = document.getElementById('conversationsList');
+    if (snap.empty) {
+        list.innerHTML = '<p class="text-center text-slate-400 py-8">لا توجد رسائل بعد</p>';
+        return;
+    }
+    const convs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderConversationCards(convs);
+
+    // تحديث شارة الرسائل
+    const unread = convs.reduce((sum, c) => sum + (c.unreadBarber || 0), 0);
+    const badge  = document.getElementById('msgBadge');
+    badge.textContent = unread;
+    badge.classList.toggle('hidden', unread === 0);
+}
+
+function renderConversationCards(convs) {
+    const list = document.getElementById('conversationsList');
+    if (!convs.length) {
+        list.innerHTML = '<p class="text-center text-slate-400 py-8">لا توجد رسائل بعد</p>';
+        return;
+    }
+    list.innerHTML = convs.map(c => `
+        <div class="bg-white p-4 rounded-2xl shadow-sm flex items-center gap-3 cursor-pointer active:scale-98 transition-all"
+            onclick="openBarberChat('${c.id}','${c.clientName||'زبون'}','${c.clientPhone||''}')">
+            <div class="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center text-xl font-black text-blue-600 flex-shrink-0">
+                ${(c.clientName||'Z')[0]}
+            </div>
+            <div class="flex-1 min-w-0">
+                <p class="font-black text-slate-800">${c.clientName||'زبون'}</p>
+                <p class="text-xs text-slate-400 truncate">${c.lastMsg||'انقر للمحادثة'}</p>
+            </div>
+            ${(c.unreadBarber||0) > 0 ? `
+            <span class="w-6 h-6 bg-blue-600 rounded-full flex items-center justify-center text-white text-xs font-black flex-shrink-0">
+                ${c.unreadBarber}
+            </span>` : ''}
+        </div>`).join('');
+}
+
+function openBarberChat(convId, clientName, clientPhone) {
+    activeConvId = convId;
+    document.getElementById('barberChatClientName').textContent  = clientName;
+    document.getElementById('barberChatClientPhone').textContent = clientPhone;
+    document.getElementById('barberChatModal').classList.remove('hidden');
+    loadChatMessages(convId, 'barber');
+}
+
+function closeBarberChat() {
+    document.getElementById('barberChatModal').classList.add('hidden');
+    if (activeConvUnsub) { activeConvUnsub(); activeConvUnsub = null; }
+}
+
+// ─── تحميل الرسائل ───
+async function loadChatMessages(convId, viewer) {
+    const container = viewer === 'barber'
+        ? document.getElementById('barberChatMessages')
+        : document.getElementById('chatMessages');
+    if (!container) return;
+
+    // أوفلاين: من IndexedDB أولاً (سريع)
+    const localMsgs = (await idbGetAll('messages'))
+        .filter(m => m.conversationId === convId)
+        .sort((a,b) => a.timestamp - b.timestamp);
+    if (localMsgs.length) renderMessages(container, localMsgs, viewer);
+
+    // أونلاين: Firestore listener للتحديث الفوري
+    if (navigator.onLine) {
+        listenToConversation(convId, viewer);
+    }
+}
+
+function renderMessages(container, msgs, viewer) {
+    if (!msgs.length) {
+        container.innerHTML = '<p class="text-center text-slate-400 text-sm py-4">لا توجد رسائل</p>';
+        return;
+    }
+    container.innerHTML = msgs.map(m => {
+        const isMine = (viewer === 'barber' && m.sender === 'barber') ||
+                       (viewer === 'client' && m.sender === 'client');
+        return `
+        <div class="flex ${isMine ? 'justify-start' : 'justify-end'}">
+            <div class="max-w-[80%] px-4 py-2.5 text-sm font-bold ${isMine ? 'msg-bubble-barber' : 'msg-bubble-client'}">
+                ${m.text}
+                <p class="text-[10px] opacity-60 mt-1">${formatTime(m.timestamp)}</p>
+            </div>
+        </div>`;
+    }).join('');
+    container.scrollTop = container.scrollHeight;
+}
+
+function formatTime(ts) {
+    if (!ts) return '';
+    try { return new Date(ts).toLocaleTimeString('ar-EG', {hour:'2-digit',minute:'2-digit'}); }
+    catch(e) { return ''; }
+}
+
+async function sendBarberMessage() {
+    const input = document.getElementById('barberMsgInput');
+    const text  = input.value.trim();
+    if (!text || !activeConvId) return;
+    input.value = '';
+
+    const msg = {
+        localId:        genUUID(),
+        conversationId: activeConvId,
+        sender:         'barber',
+        senderName:     document.getElementById('barberName').textContent,
+        text,
+        timestamp:      Date.now(),
+        synced:         false
+    };
+    await idbPut('messages', msg);
+    loadChatMessages(activeConvId, 'barber');
+
+    if (navigator.onLine && window.firebaseReady) {
+        try {
+            await firestore
+                .doc(`conversations/${activeConvId}/messages/${msg.localId}`)
+                .set({ ...msg, synced: true });
+            await firestore.doc(`conversations/${activeConvId}`).set({
+                lastMsg:     text,
+                lastMsgTime: Date.now(),
+                unreadClient: 1,
+                updatedAt:   new Date().toISOString()
+            }, { merge: true });
+            await idbPut('messages', { ...msg, synced: true });
+        } catch(e) {
+            console.error('خطأ رسالة حلاق:', e.code, e.message);
+        }
+    }
+}
+
+// ── تبديل التبويبات ──
+function switchBarberTab(tab) {
+    ['records','appointments','messages','payment','customers'].forEach(t => {
+        document.getElementById(`barberTab_${t}`)?.classList.add('hidden');
+        document.getElementById(`navB_${t}`)?.classList.remove('active');
+    });
+    document.getElementById(`barberTab_${tab}`)?.classList.remove('hidden');
+    document.getElementById(`navB_${tab}`)?.classList.add('active');
+}
+
+// ═══════════════════════════════════════════════════
+//  👤 واجهة الزبون
+// ═══════════════════════════════════════════════════
+let clientName_g = '';
+
+function openClientGuestApp(barberName) {
+    document.getElementById('clientBarberName').textContent = barberName;
+    document.getElementById('chatBarberName').textContent   = barberName;
+    document.getElementById('clientApp').classList.remove('hidden');
+    document.getElementById('barberApp').classList.add('hidden');
+    document.getElementById('clientPhoneScreen').classList.add('hidden');
+    document.getElementById('roleScreen').classList.add('hidden');
+
+    // تسجيل دخول مجهول تلقائي لضمان UID ثابت
+    ensureAuth().then(user => {
+        if (user) currentUser = user;
+        loadClientData();
+    });
+}
+
+function openClientLoggedApp(userName, barberName) {
+    clientName_g = userName;
+    openClientGuestApp(barberName);
+}
+
+async function loadClientData() {
+    if (!barberUID) return;
+
+    // تحميل بيانات المحل من Firestore (مع fallback للـ IDB)
+    try {
+        if (navigator.onLine) {
+            // إعدادات المحل
+            const shopSnap = await firestore.doc(`users/${barberUID}/profile/shopSettings`).get();
+            if (shopSnap.exists) {
+                const d = shopSnap.data();
+                document.getElementById('clientShopOpen').textContent  = d.open  || '09:00';
+                document.getElementById('clientShopClose').textContent = d.close || '22:00';
+                // حفظ محلياً للأوفلاين
+                await idbPut('settings', { key:`shopSettings_${barberUID}`, value: d });
+            }
+            // ── إصلاح بيانات الدفع: القراءة من barbers (عام) ──
+            const barberFullSnap = await firestore.doc(`barbers/${barberUID}`).get();
+            if (barberFullSnap.exists) {
+                const barberData = barberFullSnap.data();
+                // اسم الحلاق
+                const bname = barberData.name || 'الحلاق';
+                document.getElementById('clientShopNameDisplay').textContent = bname;
+                document.getElementById('clientBarberName').textContent = bname;
+                document.getElementById('chatBarberName').textContent   = bname;
+                // بيانات الدفع
+                if (barberData.paymentInfo) {
+                    renderClientPaymentInfo(barberData.paymentInfo);
+                    await idbPut('settings', { key:`paymentInfo_${barberUID}`, value: barberData.paymentInfo });
+                } else {
+                    document.getElementById('clientPaymentInfo').innerHTML =
+                        '<p class="text-center text-slate-400 py-8">لم يحدد الحلاق بيانات الدفع بعد</p>';
+                }
+            }
+        } else {
+            // أوفلاين: من IDB
+            const shopCached = await idbGet('settings', `shopSettings_${barberUID}`);
+            if (shopCached?.value) {
+                document.getElementById('clientShopOpen').textContent  = shopCached.value.open  || '09:00';
+                document.getElementById('clientShopClose').textContent = shopCached.value.close || '22:00';
+            }
+            const payCached = await idbGet('settings', `paymentInfo_${barberUID}`);
+            if (payCached?.value) renderClientPaymentInfo(payCached.value);
+        }
+    } catch(e) { console.error('loadClientData error:', e); }
+
+    // تحميل حجوزاتي
+    loadMyAppointments();
+
+    // إذا مسجّل دخول — تحميل المحادثة
+    if (currentUser) {
+        const convId = `${barberUID}_${currentUser.uid}`;
+        loadChatMessages(convId, 'client');
+    }
+}
+
+function renderClientPaymentInfo(info) {
+    const container = document.getElementById('clientPaymentInfo');
+    const typeNames = { phone:'هاتف / واتساب', iban:'رقم IBAN', paypal:'باي بال', other:'أخرى' };
+    container.innerHTML = `
+        <div class="space-y-3">
+            <div class="bg-slate-50 p-4 rounded-2xl">
+                <p class="text-[10px] text-slate-400 font-bold mb-1">نوع الحساب</p>
+                <p class="font-black text-slate-800">${typeNames[info.type]||info.type}</p>
+            </div>
+            <div class="bg-slate-50 p-4 rounded-2xl">
+                <p class="text-[10px] text-slate-400 font-bold mb-1">رقم الحساب</p>
+                <p class="font-black text-slate-800 text-left" dir="ltr">${info.number}</p>
+            </div>
+            ${info.name ? `
+            <div class="bg-slate-50 p-4 rounded-2xl">
+                <p class="text-[10px] text-slate-400 font-bold mb-1">اسم الحساب</p>
+                <p class="font-black text-slate-800">${info.name}</p>
+            </div>` : ''}
+            ${info.notes ? `
+            <div class="bg-blue-50 p-4 rounded-2xl">
+                <p class="text-[10px] text-blue-400 font-bold mb-1">ملاحظات</p>
+                <p class="text-sm text-blue-700 font-bold">${info.notes}</p>
+            </div>` : ''}
+        </div>`;
+}
+
+// ---- إرسال طلب حجز ----
+// ── طي/فتح نموذج الحجز ──
+function toggleBookForm() {
+    const collapse = document.getElementById('bookFormCollapse');
+    const btn      = document.getElementById('bookToggleBtn');
+    const isHidden = collapse.classList.contains('hidden');
+    if (isHidden) {
+        collapse.classList.remove('hidden');
+        collapse.style.maxHeight = '0';
+        collapse.style.overflow  = 'hidden';
+        collapse.style.transition = 'max-height 0.4s ease';
+        setTimeout(() => { collapse.style.maxHeight = '800px'; }, 10);
+        btn.textContent = '✕ إغلاق';
+        btn.classList.replace('bg-blue-600', 'bg-slate-400');
+        // ضبط تاريخ اليوم
+        const today = new Date().toISOString().split('T')[0];
+        document.getElementById('bookDate').value = today;
+        document.getElementById('bookDate').min   = today;
+        onDateChange();
+    } else {
+        collapse.style.maxHeight = '0';
+        setTimeout(() => {
+            collapse.classList.add('hidden');
+            collapse.style.maxHeight = '';
+        }, 400);
+        btn.textContent = '📅 احجز';
+        btn.classList.replace('bg-slate-400', 'bg-blue-600');
+    }
+}
+
+// ── عند تغيير التاريخ: احسب الأوقات وأظهرها ──
+async function onDateChange() {
+    const dateVal = document.getElementById('bookDate').value;
+    if (!dateVal || !barberUID) return;
+
+    document.getElementById('timeSlotsSection').classList.remove('hidden');
+    document.getElementById('bookRestFields').classList.add('hidden');
+    document.getElementById('bookTime').value = '';
+
+    const grid = document.getElementById('timeSlotsGrid');
+    grid.innerHTML = '<p class="col-span-3 text-center text-slate-400 text-xs py-3">جارٍ التحميل...</p>';
+
+    // احضر إعدادات المحل
+    const shopCached = await idbGet('settings', `shopSettings_${barberUID}`);
+    const shopOpen   = shopCached?.value?.open  || document.getElementById('clientShopOpen').textContent  || '09:00';
+    const shopClose  = shopCached?.value?.close || document.getElementById('clientShopClose').textContent || '22:00';
+    const slotMin    = parseInt(shopCached?.value?.duration || '30');
+
+    // احضر الحجوزات المؤكدة/المنتظرة لهذا اليوم من Firestore
+    let bookedTimes = [];
+    try {
+        if (navigator.onLine) {
+            const snap = await firestore.collection(`users/${barberUID}/appointments`)
+                .where('status', 'in', ['confirmed', 'pending'])
+                .get();
+            bookedTimes = snap.docs
+                .map(d => d.data())
+                .filter(a => a.datetime && a.datetime.startsWith(dateVal))
+                .map(a => a.datetime.split('T')[1]?.slice(0,5));
+        } else {
+            // أوفلاين: من IDB
+            const allAppts = await idbGetAll('appointments');
+            bookedTimes = allAppts
+                .filter(a => a.barberUid === barberUID &&
+                             ['confirmed','pending'].includes(a.status) &&
+                             a.datetime?.startsWith(dateVal))
+                .map(a => a.datetime.split('T')[1]?.slice(0,5));
+        }
+    } catch(e) { console.error(e); }
+
+    // توليد خانات الوقت
+    const slots = generateTimeSlots(shopOpen, shopClose, slotMin);
+    if (!slots.length) {
+        grid.innerHTML = '<p class="col-span-3 text-center text-slate-400 text-xs py-3">لا توجد أوقات متاحة</p>';
+        return;
+    }
+
+    // الوقت الحالي (لمنع حجز ماضٍ إذا كان اليوم هو اليوم)
+    const nowStr = new Date().toTimeString().slice(0,5);
+    const isToday = dateVal === new Date().toISOString().split('T')[0];
+
+    grid.innerHTML = slots.map(slot => {
+        const isBooked  = bookedTimes.includes(slot);
+        const isPast    = isToday && slot <= nowStr;
+        const disabled  = isBooked || isPast;
+        return `
+        <button onclick="selectTimeSlot('${slot}', ${disabled})"
+            class="py-2.5 rounded-xl text-xs font-black transition-all active:scale-95
+            ${isBooked  ? 'bg-red-100 text-red-400 cursor-not-allowed' :
+              isPast    ? 'bg-slate-100 text-slate-300 cursor-not-allowed' :
+                          'bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white border border-blue-200'}"
+            ${disabled ? 'disabled' : ''}>
+            ${slot}
+            ${isBooked ? '<br><span style="font-size:9px">محجوز</span>' : ''}
+        </button>`;
+    }).join('');
+}
+
+function generateTimeSlots(open, close, stepMin) {
+    const slots = [];
+    let [h, m] = open.split(':').map(Number);
+    const [ch, cm] = close.split(':').map(Number);
+    const closeTotal = ch * 60 + cm;
+    while (true) {
+        const total = h * 60 + m;
+        if (total >= closeTotal) break;
+        slots.push(`${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}`);
+        m += stepMin;
+        if (m >= 60) { h += Math.floor(m/60); m = m % 60; }
+    }
+    return slots;
+}
+
+function selectTimeSlot(slot, disabled) {
+    if (disabled) return;
+    document.getElementById('bookTime').value = slot;
+
+    // تمييز الخانة المختارة
+    document.querySelectorAll('#timeSlotsGrid button').forEach(btn => {
+        btn.classList.remove('bg-blue-600','text-white','ring-2','ring-blue-400');
+        if (btn.textContent.trim().startsWith(slot)) {
+            btn.classList.add('bg-blue-600','text-white','ring-2','ring-blue-400');
+        }
+    });
+
+    // إظهار باقي الحقول بشكل سلس
+    const rest = document.getElementById('bookRestFields');
+    rest.classList.remove('hidden');
+    rest.style.animation = 'fadeIn 0.3s ease-out';
+    document.getElementById('timeSlotError').classList.add('hidden');
+
+    // scroll للنموذج
+    setTimeout(() => rest.scrollIntoView({ behavior:'smooth', block:'nearest' }), 100);
+}
+async function submitBooking() {
+    const name  = document.getElementById('bookName').value.trim();
+    const phone = document.getElementById('bookPhone').value.trim();
+    const date  = document.getElementById('bookDate').value;
+    const time  = document.getElementById('bookTime').value;
+    const note  = document.getElementById('bookNote').value.trim();
+
+    if (!name)  { toast('⚠️ أدخل اسمك'); return; }
+    if (!date)  { toast('⚠️ اختر التاريخ'); return; }
+    if (!time)  { toast('⚠️ اختر الوقت من الشبكة أعلاه'); document.getElementById('timeSlotError').textContent='اختر وقتاً أولاً'; document.getElementById('timeSlotError').classList.remove('hidden'); return; }
+    if (!barberUID) { toast('⚠️ لم يتم تحديد الحلاق'); return; }
+
+    // ── التحقق من تعارض الوقت قبل الإرسال ──
+    const datetime = `${date}T${time}`;
+    try {
+        if (navigator.onLine) {
+            const conflict = await firestore.collection(`users/${barberUID}/appointments`)
+                .where('datetime', '==', datetime)
+                .where('status', 'in', ['confirmed','pending'])
+                .limit(1).get();
+            if (!conflict.empty) {
+                toast('⚠️ هذا الوقت محجوز — اختر وقتاً آخر');
+                // إعادة تحديث الشبكة
+                onDateChange();
+                return;
+            }
+        }
+    } catch(e) { console.error(e); }
+
+    const appt = {
+        localId:     genUUID(),
+        barberUid:   barberUID,
+        clientUid:   currentUser?.uid || 'guest',
+        clientName:  name,
+        clientPhone: phone,
+        datetime,
+        note,
+        status:    'pending',
+        synced:    false,
+        createdAt: new Date().toISOString()
+    };
+
+    await idbPut('appointments', appt);
+
+    // ── إرسال مباشر لـ Firestore تحت مسار الحلاق ──
+    const user = await ensureAuth();
+    if (navigator.onLine && user) {
+        try {
+            await firestore
+                .doc(`users/${barberUID}/appointments/${appt.localId}`)
+                .set({ ...appt, clientUid: user.uid });
+            await idbPut('appointments', { ...appt, clientUid: user.uid, synced: true });
+            toast('📅 تم إرسال طلب الحجز ✓');
+        } catch(e) {
+            console.error('خطأ حجز:', e.code, e.message);
+            toast('⚠️ خطأ: ' + (e.code || e.message));
+        }
+    } else {
+        toast('📅 تم الحفظ — سيُرسل عند الاتصال');
+        updateSyncBar('offline');
+    }
+
+    // إعادة ضبط النموذج
+    document.getElementById('bookName').value  = '';
+    document.getElementById('bookPhone').value = '';
+    document.getElementById('bookNote').value  = '';
+    document.getElementById('bookTime').value  = '';
+    document.getElementById('bookRestFields').classList.add('hidden');
+    document.getElementById('timeSlotsSection').classList.add('hidden');
+    toggleBookForm();
+    loadMyAppointments();
+}
+
+async function loadMyAppointments() {
+    const clientId = currentUser?.uid || 'guest';
+    const appts = (await idbGetAll('appointments'))
+        .filter(a => a.clientUid === clientId && a.barberUid === barberUID)
+        .sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    const list = document.getElementById('myAppointmentsList');
+    if (!appts.length) {
+        list.innerHTML = '<p class="text-center text-slate-400 py-6 text-sm">لا توجد حجوزات</p>';
+        return;
+    }
+    list.innerHTML = appts.map(a => `
+        <div class="appt-card ${a.status}">
+            <div class="flex justify-between items-center">
+                <p class="font-black text-slate-800">📅 ${formatDateTime(a.datetime)}</p>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-1 rounded-full ${
+                        a.status==='confirmed' ? 'bg-emerald-100 text-emerald-700' :
+                        a.status==='pending'   ? 'bg-amber-100 text-amber-700' :
+                                                 'bg-red-100 text-red-700'}">
+                        ${a.status==='confirmed'?'✅ مؤكد': a.status==='pending'?'⏳ بانتظار':'❌ ملغى'}
+                    </span>
+                    <button onclick="deleteMyAppt('${a.localId}')"
+                        class="w-7 h-7 bg-red-50 text-red-400 rounded-xl flex items-center justify-center active:scale-95 text-xs font-black">
+                        🗑
+                    </button>
+                </div>
+            </div>
+            ${a.note ? `<p class="text-xs text-slate-400 mt-1">${a.note}</p>` : ''}
+            ${!a.synced ? '<p class="text-[10px] text-orange-400 mt-1">🔴 في انتظار المزامنة</p>' : ''}
+        </div>`).join('');
+}
+
+// ---- المراسلة (الزبون) — إصلاح كامل ----
+async function sendClientMessage() {
+    const input = document.getElementById('clientMsgInput');
+    const text  = input.value.trim();
+    if (!text) return;
+    if (!barberUID) { toast('⚠️ لم يتم تحديد الحلاق'); return; }
+    input.value = '';
+
+    // توليد هوية ثابتة للزبون حتى لو لم يسجّل دخول
+    let clientId   = currentUser?.uid;
+    let clientName = clientName_g || 'زبون';
+
+    if (!clientId) {
+        // زبون ضيف: نستخدم ID محفوظ في IDB أو ننشئ واحداً
+        const savedId = await idbGet('settings', 'guestClientId');
+        if (savedId) {
+            clientId = savedId.value;
+        } else {
+            clientId = 'guest_' + genUUID();
+            await idbPut('settings', { key: 'guestClientId', value: clientId });
+        }
+        // استخدم الاسم من آخر حجز إن وُجد
+        const savedName = await idbGet('settings', 'guestClientName');
+        if (savedName) clientName = savedName.value;
+    }
+
+    // حفظ الاسم للاستخدام لاحقاً
+    if (clientName_g) await idbPut('settings', { key:'guestClientName', value: clientName_g });
+
+    const convId = `${barberUID}_${clientId}`;
+
+    const msg = {
+        localId:        genUUID(),
+        conversationId: convId,
+        sender:         'client',
+        senderName:     clientName,
+        senderUid:      clientId,
+        text,
+        timestamp:      Date.now(),
+        synced:         false
+    };
+
+    // حفظ محلياً أولاً
+    await idbPut('messages', msg);
+
+    // إظهار الرسالة فوراً
+    const container = document.getElementById('chatMessages');
+    const localMsgs = (await idbGetAll('messages'))
+        .filter(m => m.conversationId === convId)
+        .sort((a,b) => a.timestamp - b.timestamp);
+    renderMessages(container, localMsgs, 'client');
+
+    // ── تأكد من وجود UID قبل الإرسال ──
+    const user = await ensureAuth();
+    if (navigator.onLine && user) {
+        try {
+            const convRef = firestore.doc(`conversations/${convId}`);
+            await convRef.set({
+                barberUid:    barberUID,
+                clientUid:    user.uid,
+                clientName:   clientName,
+                clientPhone:  '',
+                lastMsg:      text,
+                lastMsgTime:  Date.now(),
+                unreadBarber: 1,
+                unreadClient: 0,
+                updatedAt:    new Date().toISOString()
+            }, { merge: true });
+
+            await firestore
+                .doc(`conversations/${convId}/messages/${msg.localId}`)
+                .set({ ...msg, synced: true });
+
+            await idbPut('messages', { ...msg, synced: true });
+
+        } catch(e) {
+            console.error('خطأ إرسال رسالة:', e.code, e.message);
+            toast('❌ ' + (e.code || e.message || 'خطأ غير معروف'));
+        }
+    } else {
+        updateSyncBar('offline');
+    }
+}
+
+// ── استمع لرسائل المحادثة بشكل صحيح ──
+function listenToConversation(convId, viewer) {
+    if (activeConvUnsub) { activeConvUnsub(); activeConvUnsub = null; }
+    if (!navigator.onLine) return;
+
+    activeConvUnsub = firestore
+        .collection(`conversations/${convId}/messages`)
+        .orderBy('timestamp', 'asc')
+        .onSnapshot(async snap => {
+            const msgs = snap.docs.map(d => ({ ...d.data() }));
+
+            // حفظ في IDB
+            for (const m of msgs) {
+                await idbPut('messages', { ...m, conversationId: convId, synced: true });
+            }
+
+            const container = viewer === 'barber'
+                ? document.getElementById('barberChatMessages')
+                : document.getElementById('chatMessages');
+            if (container) renderMessages(container, msgs, viewer);
+
+            // تحديث حالة القراءة
+            const field = viewer === 'barber' ? { unreadBarber: 0 } : { unreadClient: 0 };
+            firestore.doc(`conversations/${convId}`).update(field).catch(()=>{});
+        }, err => {
+            console.error('listener error:', err);
+        });
+}
+
+// ── تبديل تبويبات الزبون ──
+function switchClientTab(tab) {
+    ['book','payment','chat'].forEach(t => {
+        document.getElementById(`clientTab_${t}`)?.classList.add('hidden');
+        document.getElementById(`navC_${t}`)?.classList.remove('active');
+    });
+    document.getElementById(`clientTab_${tab}`)?.classList.remove('hidden');
+    document.getElementById(`navC_${tab}`)?.classList.add('active');
+
+    if (tab === 'chat' && barberUID) {
+        // استخدم نفس clientId المحفوظ
+        idbGet('settings', 'guestClientId').then(saved => {
+            const clientId = currentUser?.uid || saved?.value;
+            if (!clientId) {
+                document.getElementById('chatMessages').innerHTML =
+                    '<p class="text-center text-slate-400 text-sm py-4">أرسل رسالة للبدء 👆</p>';
+                return;
+            }
+            const convId = `${barberUID}_${clientId}`;
+            loadChatMessages(convId, 'client');
+        });
+    }
+}
+
+// ═══════════════════════════════════════════════════
+//  🛠️ الأدوات المساعدة
+// ═══════════════════════════════════════════════════
+function toast(msg) {
+    const el = document.getElementById('toastEl');
+    el.textContent = msg;
+    el.style.opacity = '1';
+    setTimeout(() => { el.style.opacity = '0'; }, 2500);
+}
+
+// ═══════════════════════════════════════════════════
+//  🚀 تهيئة التطبيق
+// ═══════════════════════════════════════════════════
+window.onload = async () => {
+    // ── 1: IDB فوراً — الأزرار تعمل من هنا ──
+    await openIDB();
+
+    // ضبط تاريخ اليوم
+    const today = new Date().toISOString().split('T')[0];
+    const bookDate = document.getElementById('bookDate');
+    if (bookDate) { bookDate.value = today; bookDate.min = today; }
+    if (!navigator.onLine) updateSyncBar('offline');
+
+    // ── 2: Firebase في الخلفية — لا ينتظر أحد ──
+    initFirebase().then(() => {
+        if (!auth || !auth.onAuthStateChanged) return;
+        auth.onAuthStateChanged(async user => {
+            if (!user) return; // لا شيء — الشاشة الأولى تبقى
+
+            // ── تجاهل المستخدم المجهول — يُدار عبر openClientGuestApp ──
+            if (user.isAnonymous) return;
+
+            currentUser = user;
+            document.getElementById('roleScreen').classList.add('hidden');
+            document.getElementById('authScreen').classList.add('hidden');
+            document.getElementById('clientPhoneScreen').classList.add('hidden');
+
+            let role = 'barber', name = 'المستخدم';
+            try {
+                const cached = await idbGet('settings', `profile_${user.uid}`);
+                if (cached?.value) { role = cached.value.role || role; name = cached.value.name || name; }
+                if (navigator.onLine && window.firebaseReady) {
+                    const pd = await firestore.doc(`users/${user.uid}/profile/info`).get();
+                    if (pd.exists) {
+                        const p = pd.data();
+                        role = p.role || role; name = p.name || name;
+                        await idbPut('settings', { key:`profile_${user.uid}`, value:p });
+                    }
+                }
+            } catch(e) { console.warn(e.message); }
+
+            currentRole = role;
+            if (role === 'barber') {
+                openBarberApp(name);
+            } else {
+                const cu = await idbGet('settings', 'guestBarberUID');
+                const cn = await idbGet('settings', 'guestBarberName');
+                if (cu) barberUID = cu.value;
+                openClientLoggedApp(name, cn?.value || 'الحلاق');
+            }
+            if (navigator.onLine) syncToFirestore();
+            else updateSyncBar('offline');
+        });
+    }).catch(e => console.warn('Firebase:', e));
+};
+</script>
+
+<!--
+════════════════════════════════════════════════════
+ 📋 قواعد Firestore Security Rules (انسخها كاملاً)
+════════════════════════════════════════════════════
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── بيانات المستخدمين ──
+    // profile عام للقراءة (shopSettings, paymentInfo)
+    match /users/{uid}/profile/{doc} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+    // الحجوزات — أي مستخدم مسجّل يستطيع الكتابة (الزبون يحجز عند الحلاق)
+    match /users/{uid}/appointments/{apptId} {
+      allow read, write: if request.auth != null;
+    }
+    // باقي بيانات المستخدم للمالك فقط
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── أسماء المستخدمين ──
+    match /usernames/{username} {
+      allow read: if true;
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if request.auth != null
+                    && resource.data.uid == request.auth.uid;
+    }
+
+    // ── الحلاقين ── قراءة عامة
+    match /barbers/{uid} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid;
+    }
+
+    // ── المحادثات ──
+    // أي مستخدم مسجّل يستطيع إنشاء محادثة وقراءتها وتحديثها
+    // الرسائل: أي مستخدم مسجّل يستطيع الكتابة والقراءة
+    match /conversations/{convId} {
+      allow read, write: if request.auth != null;
+
+      match /messages/{msgId} {
+        allow read, write: if request.auth != null;
+      }
+    }
+
+  }
+}
+
+════════════════════════════════════════════════════
+ 🔥 خطوات إنشاء مشروع Firebase من الصفر
+════════════════════════════════════════════════════
+
+1. اذهب إلى: https://console.firebase.google.com
+2. "Add project" ← اكتب اسم المشروع ← "Continue"
+3. Authentication:
+   - Build ← Authentication ← Get started
+   - Sign-in method ← Email/Password ← Enable ← Save
+4. Firestore Database:
+   - Build ← Firestore Database ← Create database
+   - اختر "Start in test mode" مؤقتاً
+   - اختر المنطقة (europe-west ← أقرب للعرب)
+5. Web App:
+   - Project Overview ← </> (Web)
+   - اكتب اسم التطبيق ← Register app
+   - انسخ الـ firebaseConfig وضعها في الكود أعلاه
+6. Security Rules:
+   - Firestore ← Rules
+   - احذف الموجود والصق قواعد الأمان الموجودة أعلاه
+   - Publish
+
+════════════════════════════════════════════════════
+ 🌐 رفع الملف على GitHub Pages
+════════════════════════════════════════════════════
+
+1. أنشئ حساب GitHub إن لم يكن لديك: https://github.com
+2. New Repository ← اسم مثل "zayan-barber" ← Public ← Create
+3. اسحب الملف index.html إلى صفحة الـ repo (أو:
+   git init && git add . && git commit -m "init" && git push)
+4. Settings ← Pages ← Source: "Deploy from branch"
+   Branch: main ← / (root) ← Save
+5. انتظر دقيقة ← ستجد رابطك:
+   https://YOUR_USERNAME.github.io/zayan-barber/
+
+════════════════════════════════════════════════════
+ 📱 تحويله إلى APK باستخدام Capacitor
+════════════════════════════════════════════════════
+
+المتطلبات: Node.js + Android Studio
+
+1. mkdir zayan-app && cd zayan-app
+   npm init -y
+   npm install @capacitor/core @capacitor/cli @capacitor/android
+
+2. npx cap init "نظام الزيان" "com.zayan.barber" --web-dir www
+
+3. mkdir www && ضع index.html داخل مجلد www
+
+4. npx cap add android
+
+5. npx cap sync android
+
+6. افتح Android Studio:
+   npx cap open android
+
+7. في Android Studio:
+   - انتظر حتى يكتمل Gradle Sync
+   - Build ← Generate Signed Bundle/APK
+   - APK ← Create new keystore
+   - أدخل بيانات التوقيع ← Next ← Release ← Finish
+
+8. ستجد الـ APK في:
+   android/app/release/app-release.apk
+
+════════════════════════════════════════════════════
+-->
+</body>
+</html>
