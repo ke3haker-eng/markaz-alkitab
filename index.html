@@ -1,0 +1,1248 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="نظام الرضوان — منصة متكاملة لإدارة حلقات تحفيظ القرآن الكريم.">
+<title>نظام الرضوان — إدارة حلقات التحفيظ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&family=Amiri:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════ TOKENS ═══════════════ */
+:root {
+  --emerald:   #10b981;
+  --emerald-d: #059669;
+  --emerald-dd:#064e3b;
+  --gold:      #d4a843;
+  --gold-l:    #f0c060;
+  --ink:       #060c18;
+  --ink-2:     #0b1526;
+  --white:     #f0f4f8;
+  --muted:     rgba(220,235,255,.45);
+  --card:      rgba(255,255,255,.045);
+  --border:    rgba(255,255,255,.08);
+  --border-em: rgba(16,185,129,.22);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:'Tajawal',sans-serif;
+  background:var(--ink);
+  color:var(--white);
+  overflow-x:hidden;
+  line-height:1.65;
+}
+
+/* ═══════════════ ISLAMIC ANIMATED BACKGROUND ═══════════════ */
+.bg-canvas{
+  position:fixed;inset:0;z-index:0;
+  overflow:hidden;
+  pointer-events:none;
+}
+
+/* شبكة إسلامية – نجمة ثمانية مكررة */
+.bg-pattern{
+  position:absolute;inset:0;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='80' height='80'%3E%3Cg fill='none' stroke='rgba(16,185,129,0.055)' stroke-width='0.8'%3E%3Cpolygon points='40,4 52,28 78,28 57,44 65,70 40,55 15,70 23,44 2,28 28,28'/%3E%3Crect x='20' y='20' width='40' height='40' transform='rotate(45 40 40)'/%3E%3C/g%3E%3C/svg%3E");
+  background-size:80px 80px;
+  animation:patternDrift 60s linear infinite;
+  opacity:1;
+}
+@keyframes patternDrift{
+  from{background-position:0 0}
+  to{background-position:160px 160px}
+}
+
+/* هلال متحرك */
+.crescent{
+  position:absolute;
+  top:8vh; left:6vw;
+  width:100px; height:100px;
+  opacity:.07;
+  animation:floatCrescent 14s ease-in-out infinite;
+}
+@keyframes floatCrescent{
+  0%,100%{transform:translateY(0) rotate(-15deg)}
+  50%{transform:translateY(-22px) rotate(-5deg)}
+}
+
+/* نجوم متناثرة */
+.stars-layer{
+  position:absolute;inset:0;
+}
+.star{
+  position:absolute;
+  border-radius:50%;
+  background:#d4a843;
+  animation:twinkle var(--dur,3s) ease-in-out infinite var(--delay,0s);
+}
+@keyframes twinkle{
+  0%,100%{opacity:.06;transform:scale(1)}
+  50%{opacity:.3;transform:scale(1.4)}
+}
+
+/* توهج */
+.glow{position:absolute;border-radius:50%;filter:blur(110px);pointer-events:none}
+.g1{width:640px;height:640px;top:-180px;right:-180px;background:radial-gradient(circle,rgba(16,185,129,.18),transparent 70%);animation:glowPulse 9s ease-in-out infinite}
+.g2{width:520px;height:520px;bottom:-160px;left:-160px;background:radial-gradient(circle,rgba(6,78,59,.28),transparent 70%);animation:glowPulse 11s ease-in-out infinite reverse}
+.g3{width:340px;height:340px;top:48%;left:28%;background:radial-gradient(circle,rgba(212,168,67,.09),transparent 70%);animation:glowPulse 13s ease-in-out infinite 2s}
+@keyframes glowPulse{
+  0%,100%{transform:scale(1) translate(0,0)}
+  33%{transform:scale(1.07) translate(22px,-16px)}
+  66%{transform:scale(.94) translate(-16px,24px)}
+}
+
+/* زخرفة زهرية في الزاوية */
+.arabesque{
+  position:absolute;
+  bottom:5vh; right:4vw;
+  width:140px; height:140px;
+  opacity:.04;
+  animation:spinSlow 40s linear infinite;
+}
+@keyframes spinSlow{from{transform:rotate(0)}to{transform:rotate(360deg)}}
+
+/* ═══════════════ NAV ═══════════════ */
+nav{
+  position:fixed;top:0;inset-inline:0;z-index:200;
+  padding:14px 28px;
+  display:flex;align-items:center;justify-content:space-between;
+  background:rgba(6,12,24,.82);
+  backdrop-filter:blur(24px);
+  border-bottom:1px solid var(--border);
+  transition:background .3s;
+}
+nav.scrolled{background:rgba(6,12,24,.96)}
+
+.nav-brand{display:flex;align-items:center;gap:10px;text-decoration:none}
+.nav-logo{
+  width:40px;height:40px;
+  background:linear-gradient(135deg,var(--emerald),var(--emerald-d));
+  border-radius:11px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:20px;
+  box-shadow:0 4px 14px rgba(16,185,129,.38);
+  transition:transform .2s;
+}
+.nav-brand:hover .nav-logo{transform:rotate(-8deg) scale(1.08)}
+.nav-name{font-size:17px;font-weight:900;color:#fff;font-family:'Tajawal',sans-serif}
+.nav-name span{color:var(--gold)}
+
+.nav-cta{
+  background:linear-gradient(135deg,var(--emerald),var(--emerald-d));
+  color:#fff;border:none;padding:10px 24px;
+  border-radius:99px;font-family:inherit;
+  font-size:13px;font-weight:800;cursor:pointer;
+  box-shadow:0 4px 16px rgba(16,185,129,.33);
+  transition:all .2s;text-decoration:none;display:inline-block;
+  letter-spacing:.3px;
+}
+.nav-cta:hover{transform:translateY(-2px);filter:brightness(1.12)}
+
+/* ═══════════════ HERO ═══════════════ */
+.hero{
+  position:relative;z-index:1;
+  min-height:100vh;
+  display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  text-align:center;
+  padding:130px 24px 90px;
+}
+
+/* آية قرآنية فوق العنوان */
+.hero-ayah{
+  font-family:'Amiri',serif;
+  font-size:clamp(15px,2.5vw,19px);
+  color:var(--gold);
+  opacity:.75;
+  margin-bottom:22px;
+  letter-spacing:.5px;
+  animation:fadeUp .5s ease both;
+}
+.hero-ayah-ref{
+  font-family:'Tajawal',sans-serif;
+  font-size:11px;color:rgba(212,168,67,.5);
+  display:block;margin-top:4px;
+}
+
+.hero-badge{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(16,185,129,.1);
+  border:1px solid rgba(16,185,129,.28);
+  border-radius:99px;padding:6px 18px;
+  font-size:12px;font-weight:700;color:var(--emerald);
+  margin-bottom:26px;
+  animation:fadeUp .6s .05s ease both;
+}
+
+.hero-title{
+  font-size:clamp(38px,8.5vw,76px);
+  font-weight:900;line-height:1.12;
+  color:#fff;
+  margin-bottom:22px;
+  animation:fadeUp .7s .1s ease both;
+}
+.hero-title .accent{
+  background:linear-gradient(120deg,var(--emerald),var(--gold-l));
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;
+}
+
+.hero-sub{
+  font-size:clamp(14px,2.6vw,19px);
+  color:var(--muted);
+  max-width:540px;margin:0 auto 44px;
+  font-weight:400;line-height:1.75;
+  animation:fadeUp .8s .18s ease both;
+}
+
+.hero-btns{
+  display:flex;gap:14px;flex-wrap:wrap;
+  justify-content:center;margin-bottom:64px;
+  animation:fadeUp .9s .26s ease both;
+}
+
+.btn-primary{
+  background:linear-gradient(135deg,var(--emerald),var(--emerald-d));
+  color:#fff;border:none;padding:16px 36px;
+  border-radius:14px;font-family:inherit;
+  font-size:15px;font-weight:800;cursor:pointer;
+  box-shadow:0 8px 28px rgba(16,185,129,.4);
+  transition:all .25s;text-decoration:none;
+  display:inline-flex;align-items:center;gap:9px;
+  letter-spacing:.2px;
+}
+.btn-primary:hover{transform:translateY(-3px);box-shadow:0 14px 38px rgba(16,185,129,.52)}
+
+.btn-secondary{
+  background:transparent;color:rgba(226,232,240,.65);
+  border:1.5px solid rgba(226,232,240,.18);
+  padding:16px 30px;border-radius:14px;
+  font-family:inherit;font-size:15px;font-weight:700;
+  cursor:pointer;transition:all .2s;text-decoration:none;
+  display:inline-flex;align-items:center;gap:9px;
+}
+.btn-secondary:hover{border-color:var(--emerald);color:var(--emerald)}
+
+/* معاينة بصرية */
+.hero-preview{
+  position:relative;z-index:1;
+  max-width:820px;margin:0 auto;
+  animation:fadeUp 1s .36s ease both;
+}
+.preview-glow{
+  position:absolute;inset:-20px;
+  background:radial-gradient(ellipse at 50% 50%,rgba(16,185,129,.1),transparent 70%);
+  pointer-events:none;
+  animation:previewGlow 4s ease-in-out infinite alternate;
+}
+@keyframes previewGlow{
+  from{opacity:.5}to{opacity:1}
+}
+
+.preview-frame{
+  background:rgba(255,255,255,.035);
+  border:1px solid rgba(255,255,255,.09);
+  border-radius:22px;overflow:hidden;
+  box-shadow:0 0 0 1px rgba(255,255,255,.04),0 48px 96px rgba(0,0,0,.65),0 0 80px rgba(16,185,129,.07);
+}
+.preview-bar{
+  background:rgba(255,255,255,.04);
+  padding:13px 18px;
+  display:flex;align-items:center;gap:8px;
+  border-bottom:1px solid rgba(255,255,255,.05);
+}
+.preview-dot{width:10px;height:10px;border-radius:50%}
+.preview-url{
+  flex:1;text-align:center;
+  background:rgba(255,255,255,.05);border-radius:99px;
+  padding:3px 14px;font-size:10px;color:rgba(255,255,255,.28);
+  margin:0 8px;
+}
+.preview-content{
+  padding:22px;
+  display:grid;
+  grid-template-columns:repeat(3,1fr);
+  gap:12px;
+}
+.mini-card{
+  background:rgba(255,255,255,.04);
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:13px;padding:15px 12px;
+  text-align:center;
+  transition:border-color .3s;
+}
+.mini-card:hover{border-color:var(--border-em)}
+.mini-n{font-size:28px;font-weight:900;color:var(--emerald);line-height:1}
+.mini-l{font-size:10px;color:rgba(255,255,255,.38);font-weight:600;margin-top:4px}
+.mini-students{grid-column:span 3;display:flex;flex-direction:column;gap:8px}
+.mini-student{
+  background:rgba(255,255,255,.035);
+  border:1px solid rgba(255,255,255,.06);
+  border-radius:11px;padding:11px 14px;
+  display:flex;align-items:center;gap:10px;
+  transition:background .2s;
+}
+.mini-student:hover{background:rgba(16,185,129,.05)}
+.mini-av{
+  width:32px;height:32px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--emerald),var(--emerald-d));
+  border-radius:9px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;font-weight:900;color:#fff;
+}
+.mini-nm{font-size:12px;font-weight:700;color:rgba(255,255,255,.82);flex:1}
+.mini-bg{font-size:10px;font-weight:700;padding:3px 9px;border-radius:99px}
+.mini-bg.g{background:rgba(16,185,129,.14);color:#34d399}
+.mini-bg.r{background:rgba(239,68,68,.13);color:#f87171}
+.mini-bg.b{background:rgba(59,130,246,.13);color:#93c5fd}
+
+/* ═══════════════ MARQUEE / TRUST BAR ═══════════════ */
+.trust-bar{
+  position:relative;z-index:1;
+  padding:20px 0;
+  border-top:1px solid var(--border);
+  border-bottom:1px solid var(--border);
+  overflow:hidden;
+  background:rgba(255,255,255,.015);
+}
+.trust-track{
+  display:flex;gap:48px;align-items:center;
+  width:max-content;
+  animation:marquee 28s linear infinite;
+}
+.trust-track:hover{animation-play-state:paused}
+@keyframes marquee{
+  from{transform:translateX(0)}
+  to{transform:translateX(-50%)}
+}
+.trust-item{
+  display:flex;align-items:center;gap:8px;
+  font-size:12px;font-weight:700;color:rgba(255,255,255,.35);
+  white-space:nowrap;
+}
+.trust-item .dot{width:4px;height:4px;border-radius:50%;background:var(--emerald);opacity:.6}
+
+/* ═══════════════ STATS ═══════════════ */
+.stats-section{
+  position:relative;z-index:1;
+  padding:72px 24px;
+  max-width:900px;margin:0 auto;
+}
+.stats-row{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+  gap:16px;
+}
+.stat-box{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:20px;padding:28px 20px;
+  text-align:center;
+  position:relative;overflow:hidden;
+  transition:border-color .25s,transform .25s;
+  cursor:default;
+}
+.stat-box::after{
+  content:'';
+  position:absolute;bottom:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--emerald),transparent);
+  opacity:0;transition:opacity .3s;
+}
+.stat-box:hover{border-color:var(--border-em);transform:translateY(-5px)}
+.stat-box:hover::after{opacity:1}
+.stat-n{
+  font-size:42px;font-weight:900;
+  background:linear-gradient(135deg,var(--emerald),var(--gold-l));
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;
+  line-height:1;
+}
+.stat-l{font-size:12px;color:var(--muted);font-weight:600;margin-top:7px}
+
+/* ═══════════════ FEATURES ═══════════════ */
+.section{
+  position:relative;z-index:1;
+  padding:88px 24px;
+  max-width:980px;margin:0 auto;
+}
+.section-label{
+  display:inline-flex;align-items:center;gap:8px;
+  background:rgba(16,185,129,.08);
+  border:1px solid rgba(16,185,129,.2);
+  border-radius:99px;padding:5px 15px;
+  font-size:11px;font-weight:700;color:var(--emerald);
+  margin-bottom:18px;letter-spacing:.5px;
+}
+.section-title{
+  font-size:clamp(26px,5vw,42px);
+  font-weight:900;color:#fff;
+  margin-bottom:12px;line-height:1.2;
+}
+.section-sub{
+  font-size:15px;color:var(--muted);
+  max-width:500px;margin-bottom:52px;line-height:1.7;
+}
+
+.features-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(270px,1fr));
+  gap:16px;
+}
+.feature-card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:20px;padding:26px;
+  transition:all .28s;position:relative;overflow:hidden;
+  cursor:default;
+}
+.feature-card::before{
+  content:'';
+  position:absolute;top:0;right:0;left:0;height:2px;
+  background:linear-gradient(90deg,var(--emerald),var(--gold));
+  opacity:0;transition:opacity .28s;
+}
+.feature-card:hover{
+  border-color:rgba(16,185,129,.22);
+  transform:translateY(-5px);
+  background:rgba(16,185,129,.04);
+}
+.feature-card:hover::before{opacity:1}
+.feature-icon{
+  width:50px;height:50px;
+  background:rgba(16,185,129,.1);
+  border-radius:15px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:22px;margin-bottom:17px;
+  transition:background .25s,transform .25s;
+}
+.feature-card:hover .feature-icon{background:rgba(16,185,129,.18);transform:scale(1.1)}
+.feature-title{font-size:15px;font-weight:800;color:#fff;margin-bottom:8px}
+.feature-desc{font-size:12.5px;color:var(--muted);line-height:1.75}
+
+/* ═══════════════ STEPS ═══════════════ */
+.steps-wrap{position:relative}
+.steps-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(200px,1fr));
+  gap:0;position:relative;
+}
+.steps-line{
+  position:absolute;top:38px;right:14%;left:14%;
+  height:1px;
+  background:linear-gradient(90deg,transparent,rgba(16,185,129,.3),rgba(212,168,67,.2),transparent);
+  pointer-events:none;
+}
+.step-item{text-align:center;padding:0 18px;position:relative;z-index:1}
+.step-num{
+  width:76px;height:76px;margin:0 auto 20px;
+  background:linear-gradient(135deg,rgba(16,185,129,.13),rgba(16,185,129,.04));
+  border:1.5px solid rgba(16,185,129,.28);
+  border-radius:20px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:28px;
+  transition:all .28s;
+}
+.step-item:hover .step-num{
+  background:rgba(16,185,129,.2);border-color:var(--emerald);
+  transform:scale(1.1) rotate(-5deg);
+}
+.step-title{font-size:14px;font-weight:800;color:#fff;margin-bottom:7px}
+.step-desc{font-size:11.5px;color:var(--muted);line-height:1.65}
+
+/* ═══════════════ ROLES ═══════════════ */
+.roles-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+  gap:16px;
+}
+.role-card{
+  border-radius:22px;padding:30px 26px;
+  position:relative;overflow:hidden;
+  transition:transform .25s;
+}
+.role-card:hover{transform:translateY(-4px)}
+.role-card.supervisor{background:linear-gradient(135deg,rgba(16,185,129,.11),rgba(16,185,129,.03));border:1px solid rgba(16,185,129,.22)}
+.role-card.teacher{background:linear-gradient(135deg,rgba(59,130,246,.11),rgba(59,130,246,.03));border:1px solid rgba(59,130,246,.22)}
+.role-card.student{background:linear-gradient(135deg,rgba(212,168,67,.11),rgba(212,168,67,.03));border:1px solid rgba(212,168,67,.22)}
+.role-card::before{
+  content:'';
+  position:absolute;top:-40px;left:-40px;
+  width:130px;height:130px;border-radius:50%;
+  filter:blur(50px);opacity:.15;pointer-events:none;
+}
+.role-card.supervisor::before{background:var(--emerald)}
+.role-card.teacher::before{background:#3b82f6}
+.role-card.student::before{background:var(--gold)}
+.role-icon{font-size:34px;margin-bottom:15px}
+.role-title{font-size:17px;font-weight:900;color:#fff;margin-bottom:9px}
+.role-desc{font-size:12px;color:var(--muted);margin-bottom:18px;line-height:1.65}
+.role-perms{display:flex;flex-direction:column;gap:7px}
+.role-perm{
+  display:flex;align-items:center;gap:8px;
+  font-size:11.5px;color:rgba(226,232,240,.72);font-weight:600;
+}
+.role-perm::before{content:'✓';color:var(--emerald);font-weight:900;font-size:13px}
+
+/* ═══════════════ PRICING (one-time) ═══════════════ */
+.pricing-section{
+  position:relative;z-index:1;
+  padding:100px 24px;
+  text-align:center;
+}
+.pricing-box{
+  max-width:560px;margin:0 auto;
+  background:linear-gradient(145deg,rgba(16,185,129,.09),rgba(212,168,67,.04));
+  border:1px solid rgba(16,185,129,.28);
+  border-radius:28px;padding:56px 40px;
+  position:relative;overflow:hidden;
+}
+.pricing-box::before{
+  content:'';
+  position:absolute;top:-80px;left:50%;transform:translateX(-50%);
+  width:320px;height:320px;
+  background:radial-gradient(circle,rgba(16,185,129,.12),transparent 70%);
+  pointer-events:none;
+}
+.pricing-badge{
+  display:inline-flex;align-items:center;gap:7px;
+  background:linear-gradient(135deg,rgba(212,168,67,.18),rgba(212,168,67,.06));
+  border:1px solid rgba(212,168,67,.35);
+  border-radius:99px;padding:6px 18px;
+  font-size:11px;font-weight:800;color:var(--gold-l);
+  margin-bottom:24px;position:relative;z-index:1;
+  letter-spacing:.4px;
+}
+.pricing-title{
+  font-size:clamp(26px,5vw,38px);
+  font-weight:900;color:#fff;margin-bottom:14px;
+  position:relative;z-index:1;
+}
+.pricing-price{
+  font-size:clamp(52px,10vw,80px);
+  font-weight:900;
+  background:linear-gradient(120deg,var(--emerald),var(--gold-l));
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;
+  line-height:1;margin-bottom:6px;
+  position:relative;z-index:1;
+}
+.pricing-price-note{
+  font-size:13px;color:var(--muted);margin-bottom:28px;
+  position:relative;z-index:1;
+}
+.pricing-sub{
+  font-size:14px;color:var(--muted);
+  margin-bottom:36px;line-height:1.75;
+  position:relative;z-index:1;
+}
+.pricing-perks{
+  display:flex;flex-direction:column;gap:10px;
+  margin-bottom:36px;text-align:right;
+  position:relative;z-index:1;
+}
+.pricing-perk{
+  display:flex;align-items:center;gap:10px;
+  font-size:13px;color:rgba(226,232,240,.78);font-weight:600;
+}
+.pricing-perk-icon{
+  width:24px;height:24px;border-radius:8px;
+  background:rgba(16,185,129,.15);
+  display:flex;align-items:center;justify-content:center;
+  font-size:13px;flex-shrink:0;
+}
+
+/* ═══════════════ CTA ═══════════════ */
+.cta-section{
+  position:relative;z-index:1;
+  padding:100px 24px 80px;
+  text-align:center;
+}
+.cta-box{
+  max-width:660px;margin:0 auto;
+  background:linear-gradient(135deg,rgba(16,185,129,.09),rgba(16,185,129,.03));
+  border:1px solid rgba(16,185,129,.22);
+  border-radius:30px;padding:60px 44px;
+  position:relative;overflow:hidden;
+}
+.cta-box::before{
+  content:'';
+  position:absolute;top:-70px;left:50%;transform:translateX(-50%);
+  width:340px;height:340px;
+  background:radial-gradient(circle,rgba(16,185,129,.13),transparent 70%);
+  pointer-events:none;
+}
+.cta-title{font-size:clamp(26px,5vw,38px);font-weight:900;color:#fff;margin-bottom:16px;position:relative;z-index:1}
+.cta-sub{font-size:14px;color:var(--muted);margin-bottom:36px;line-height:1.75;position:relative;z-index:1}
+
+/* ═══════════════ DEVELOPER CARD ═══════════════ */
+.dev-section{
+  position:relative;z-index:1;
+  padding:60px 24px 90px;
+  max-width:680px;margin:0 auto;
+}
+.dev-card{
+  background:rgba(255,255,255,.025);
+  border:1px solid var(--border);
+  border-radius:28px;
+  padding:48px 40px 40px;
+  position:relative;overflow:hidden;
+  text-align:center;
+}
+/* شريط توهج علوي */
+.dev-card::before{
+  content:'';
+  position:absolute;top:0;left:20%;right:20%;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(16,185,129,.5),rgba(212,168,67,.3),transparent);
+}
+/* ضوء خلفي */
+.dev-card::after{
+  content:'';
+  position:absolute;top:-60px;left:50%;transform:translateX(-50%);
+  width:280px;height:280px;
+  background:radial-gradient(circle,rgba(16,185,129,.07),transparent 70%);
+  pointer-events:none;
+}
+/* أيقونة المطور الهندسية */
+.dev-monogram{
+  width:80px;height:80px;margin:0 auto 22px;
+  position:relative;z-index:1;
+}
+.dev-monogram svg{width:100%;height:100%}
+
+.dev-label{
+  font-size:10px;font-weight:700;color:var(--emerald);
+  letter-spacing:1.5px;text-transform:uppercase;
+  margin-bottom:8px;position:relative;z-index:1;
+}
+.dev-name{
+  font-size:24px;font-weight:900;color:#fff;
+  margin-bottom:5px;position:relative;z-index:1;
+}
+.dev-title{
+  font-size:12.5px;color:var(--muted);
+  margin-bottom:32px;position:relative;z-index:1;
+  line-height:1.6;
+}
+/* فاصل */
+.dev-divider{
+  width:40px;height:1px;
+  background:linear-gradient(90deg,transparent,rgba(16,185,129,.4),transparent);
+  margin:0 auto 32px;
+}
+
+/* شبكة روابط التواصل */
+.dev-socials{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:12px;
+  position:relative;z-index:1;
+}
+.dev-social{
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:18px 10px 16px;
+  background:rgba(255,255,255,.03);
+  border:1px solid rgba(255,255,255,.07);
+  border-radius:18px;
+  text-decoration:none;
+  color:rgba(255,255,255,.5);
+  font-size:11px;font-weight:700;
+  transition:all .28s;
+  position:relative;overflow:hidden;
+}
+.dev-social::before{
+  content:'';
+  position:absolute;inset:0;opacity:0;
+  transition:opacity .28s;
+  border-radius:18px;
+}
+.dev-social.whatsapp::before{background:linear-gradient(135deg,rgba(37,211,102,.12),rgba(37,211,102,.04))}
+.dev-social.facebook::before{background:linear-gradient(135deg,rgba(66,103,178,.12),rgba(66,103,178,.04))}
+.dev-social.instagram::before{background:linear-gradient(135deg,rgba(225,48,108,.1),rgba(131,58,180,.08))}
+.dev-social.gmail::before{background:linear-gradient(135deg,rgba(234,67,53,.12),rgba(234,67,53,.04))}
+
+.dev-social:hover{transform:translateY(-4px)}
+.dev-social:hover::before{opacity:1}
+.dev-social.whatsapp:hover{border-color:rgba(37,211,102,.35);color:#25d366}
+.dev-social.facebook:hover{border-color:rgba(66,103,178,.4);color:#4267b2}
+.dev-social.instagram:hover{border-color:rgba(225,48,108,.35);color:#e1306c}
+.dev-social.gmail:hover{border-color:rgba(234,67,53,.35);color:#ea4335}
+
+.dev-social-icon{
+  width:36px;height:36px;
+  display:flex;align-items:center;justify-content:center;
+  border-radius:11px;
+  background:rgba(255,255,255,.06);
+  transition:background .28s;
+  flex-shrink:0;
+}
+.dev-social:hover .dev-social-icon{background:rgba(255,255,255,.1)}
+.dev-social-icon svg{width:18px;height:18px}
+.dev-social-name{font-size:10.5px;font-weight:700;letter-spacing:.2px}
+
+@media(max-width:500px){
+  .dev-socials{grid-template-columns:repeat(2,1fr)}
+  .dev-card{padding:36px 22px 32px}
+}
+
+/* ═══════════════ FOOTER ═══════════════ */
+footer{
+  position:relative;z-index:1;
+  border-top:1px solid var(--border);
+  padding:36px 24px;
+  text-align:center;
+  font-size:12px;color:rgba(226,232,240,.28);
+}
+footer .f-brand{color:rgba(226,232,240,.55);font-weight:700}
+footer .f-heart{color:#ef4444}
+footer a{color:var(--emerald);text-decoration:none}
+
+/* ═══════════════ ANIMATIONS ═══════════════ */
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(26px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.reveal{opacity:0;transform:translateY(22px);transition:opacity .65s ease,transform .65s ease}
+.reveal.visible{opacity:1;transform:none}
+.reveal-left{opacity:0;transform:translateX(24px);transition:opacity .65s ease,transform .65s ease}
+.reveal-left.visible{opacity:1;transform:none}
+
+/* ═══════════════ SCROLL INDICATOR ═══════════════ */
+.scroll-down{
+  position:absolute;bottom:32px;left:50%;transform:translateX(-50%);
+  display:flex;flex-direction:column;align-items:center;gap:6px;
+  font-size:10px;color:rgba(255,255,255,.3);font-weight:600;
+  animation:fadeUp 1.2s .6s ease both;
+  cursor:pointer;
+}
+.scroll-arrow{
+  width:22px;height:22px;
+  border-right:2px solid rgba(16,185,129,.4);
+  border-bottom:2px solid rgba(16,185,129,.4);
+  transform:rotate(45deg);
+  animation:scrollBounce 2s ease-in-out infinite;
+}
+@keyframes scrollBounce{
+  0%,100%{transform:rotate(45deg) translateY(0)}
+  50%{transform:rotate(45deg) translateY(5px)}
+}
+
+/* ═══════════════ RESPONSIVE ═══════════════ */
+@media(max-width:600px){
+  .hero-preview{display:none}
+  .steps-line{display:none}
+  .steps-grid{gap:28px}
+  nav{padding:12px 16px}
+  .pricing-box,.cta-box{padding:36px 22px}
+  .dev-socials{grid-template-columns:repeat(2,1fr)}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}
+}
+</style>
+</head>
+<body>
+
+<!-- ══ BACKGROUND ══ -->
+<div class="bg-canvas">
+  <div class="bg-pattern"></div>
+  <div class="glow g1"></div>
+  <div class="glow g2"></div>
+  <div class="glow g3"></div>
+
+  <!-- هلال SVG -->
+  <svg class="crescent" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <path d="M60 10C40 10 22 26 22 50s18 40 38 40c-18-5-30-20-30-40S42 15 60 10z" fill="#d4a843"/>
+  </svg>
+
+  <!-- زخرفة دائرية -->
+  <svg class="arabesque" viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <g stroke="#10b981" stroke-width="1" fill="none">
+      <circle cx="100" cy="100" r="90"/>
+      <circle cx="100" cy="100" r="70"/>
+      <circle cx="100" cy="100" r="50"/>
+      <polygon points="100,10 122,78 194,78 135,122 157,190 100,147 43,190 65,122 6,78 78,78" stroke-width="0.8"/>
+      <polygon points="100,30 116,78 166,78 127,107 143,155 100,126 57,155 73,107 34,78 84,78" stroke-width="0.5" opacity="0.6"/>
+    </g>
+  </svg>
+
+  <!-- نجوم -->
+  <div class="stars-layer" id="starsLayer"></div>
+</div>
+
+<!-- ══ NAV ══ -->
+<nav id="mainNav">
+  <a href="#" class="nav-brand">
+    <div class="nav-logo">📖</div>
+    <span class="nav-name">نظام <span>الرضوان</span></span>
+  </a>
+  <a href="https://ke3haker-eng.github.io/markaz-alkitab/app/" class="nav-cta">ابدأ الآن ←</a>
+</nav>
+
+<!-- ══ HERO ══ -->
+<section class="hero">
+  <p class="hero-ayah">
+    ﴿ إِنَّا نَحْنُ نَزَّلْنَا الذِّكْرَ وَإِنَّا لَهُ لَحَافِظُونَ ﴾
+    <span class="hero-ayah-ref">سورة الحجر — الآية ٩</span>
+  </p>
+
+  <div class="hero-badge">
+    <span>🌟</span> دفع مرة واحدة — ملكية دائمة بلا اشتراكات
+  </div>
+
+  <h1 class="hero-title">
+    إدارة حلقات التحفيظ<br>
+    <span class="accent">بذكاء واحترافية</span>
+  </h1>
+
+  <p class="hero-sub">
+    منصة سحابية متكاملة لمراكز تحفيظ القرآن الكريم — تتبع الطلاب، الحضور، التقارير، وتقدم الحفظ من أي جهاز.
+  </p>
+
+  <div class="hero-btns">
+    <a href="https://ke3haker-eng.github.io/markaz-alkitab/app/" class="btn-primary">🚀 ابدأ الآن مجاناً</a>
+    <a href="#features" class="btn-secondary">🔍 استكشف المميزات</a>
+  </div>
+
+  <!-- معاينة بصرية -->
+  <div class="hero-preview">
+    <div class="preview-glow"></div>
+    <div class="preview-frame">
+      <div class="preview-bar">
+        <div class="preview-dot" style="background:#ef4444"></div>
+        <div class="preview-dot" style="background:#f59e0b"></div>
+        <div class="preview-dot" style="background:#10b981"></div>
+        <div class="preview-url">نظام الرضوان — مركز الكتاب للتحفيظ</div>
+      </div>
+      <div class="preview-content">
+        <div class="mini-card">
+          <div class="mini-n" id="cnt1">٠</div>
+          <div class="mini-l">طالب</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-n" style="color:#34d399" id="cnt2">٠٪</div>
+          <div class="mini-l">نسبة الحضور</div>
+        </div>
+        <div class="mini-card">
+          <div class="mini-n" style="color:var(--gold)" id="cnt3">٠</div>
+          <div class="mini-l">حلقات</div>
+        </div>
+        <div class="mini-students">
+          <div class="mini-student">
+            <div class="mini-av">م</div>
+            <span class="mini-nm">محمد عبدالله الأحمدي</span>
+            <span class="mini-bg g">🟢 حاضر</span>
+          </div>
+          <div class="mini-student">
+            <div class="mini-av">أ</div>
+            <span class="mini-nm">أحمد خالد الزهراني</span>
+            <span class="mini-bg b">📖 البقرة ١–٢٠</span>
+          </div>
+          <div class="mini-student">
+            <div class="mini-av">ع</div>
+            <span class="mini-nm">عمر سعد القحطاني</span>
+            <span class="mini-bg r">🔴 غائب</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="scroll-down" onclick="document.querySelector('.trust-bar').scrollIntoView({behavior:'smooth'})">
+    <span>اكتشف أكثر</span>
+    <div class="scroll-arrow"></div>
+  </div>
+</section>
+
+<!-- ══ TRUST BAR ══ -->
+<div class="trust-bar">
+  <div class="trust-track" id="trustTrack">
+    <div class="trust-item"><span class="dot"></span>١١٤ سورة مدعومة بالكامل</div>
+    <div class="trust-item"><span class="dot"></span>تزامن سحابي فوري</div>
+    <div class="trust-item"><span class="dot"></span>تصدير Excel & PDF</div>
+    <div class="trust-item"><span class="dot"></span>نظام صلاحيات متكامل</div>
+    <div class="trust-item"><span class="dot"></span>يعمل بدون إنترنت</div>
+    <div class="trust-item"><span class="dot"></span>دفع مرة واحدة فقط</div>
+    <div class="trust-item"><span class="dot"></span>إشعارات الغياب الفوري</div>
+    <div class="trust-item"><span class="dot"></span>تقارير واتساب بنقرة</div>
+    <!-- كرر لاستمرارية المارقي -->
+    <div class="trust-item"><span class="dot"></span>١١٤ سورة مدعومة بالكامل</div>
+    <div class="trust-item"><span class="dot"></span>تزامن سحابي فوري</div>
+    <div class="trust-item"><span class="dot"></span>تصدير Excel & PDF</div>
+    <div class="trust-item"><span class="dot"></span>نظام صلاحيات متكامل</div>
+    <div class="trust-item"><span class="dot"></span>يعمل بدون إنترنت</div>
+    <div class="trust-item"><span class="dot"></span>دفع مرة واحدة فقط</div>
+    <div class="trust-item"><span class="dot"></span>إشعارات الغياب الفوري</div>
+    <div class="trust-item"><span class="dot"></span>تقارير واتساب بنقرة</div>
+  </div>
+</div>
+
+<!-- ══ STATS ══ -->
+<section class="stats-section reveal">
+  <div class="stats-row">
+    <div class="stat-box">
+      <div class="stat-n" data-count="114">١١٤</div>
+      <div class="stat-l">سورة مدعومة</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-n">∞</div>
+      <div class="stat-l">عدد الطلاب</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-n" data-count="3">٣</div>
+      <div class="stat-l">مستويات صلاحيات</div>
+    </div>
+    <div class="stat-box">
+      <div class="stat-n">٠ ﷼</div>
+      <div class="stat-l">تكلفة الاشتراك الشهري</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ FEATURES ══ -->
+<section class="section reveal" id="features">
+  <div class="section-label">✦ المميزات</div>
+  <h2 class="section-title">كل ما تحتاجه في مكان واحد</h2>
+  <p class="section-sub">أدوات احترافية مصممة خصيصاً لمراكز تحفيظ القرآن الكريم</p>
+
+  <div class="features-grid">
+    <div class="feature-card">
+      <div class="feature-icon">👥</div>
+      <div class="feature-title">إدارة الطلاب</div>
+      <div class="feature-desc">أضف وعدّل بيانات الطلاب، تتبع مستواهم ومراحل حفظهم بكل سهولة.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📅</div>
+      <div class="feature-title">تسجيل الحضور</div>
+      <div class="feature-desc">سجّل الحضور اليومي لكل طالب مع تصنيف حاضر / غائب / معذور.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📖</div>
+      <div class="feature-title">متابعة الحفظ</div>
+      <div class="feature-desc">سجّل السور والآيات المحفوظة لكل جلسة مع تتبع المراجعة والأخطاء.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📊</div>
+      <div class="feature-title">تقارير تفصيلية</div>
+      <div class="feature-desc">تقارير أسبوعية وشهرية جاهزة للطباعة أو الإرسال على واتساب بنقرة واحدة.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">☁️</div>
+      <div class="feature-title">تزامن سحابي</div>
+      <div class="feature-desc">بياناتك محفوظة وآمنة في السحابة — اعمل من أي جهاز في أي وقت.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📱</div>
+      <div class="feature-title">واجهة الطالب</div>
+      <div class="feature-desc">يمكن لكل طالب تسجيل الدخول لمتابعة تقدمه في الحفظ من المنزل.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🏫</div>
+      <div class="feature-title">متعدد الحلقات</div>
+      <div class="feature-desc">أدر عدة حلقات في مركز واحد مع فصل كامل بين بياناتها.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">📤</div>
+      <div class="feature-title">تصدير Excel و PDF</div>
+      <div class="feature-desc">صدّر التقارير بصيغ Excel و PDF احترافية لمشاركتها مع أولياء الأمور.</div>
+    </div>
+    <div class="feature-card">
+      <div class="feature-icon">🔒</div>
+      <div class="feature-title">نظام صلاحيات</div>
+      <div class="feature-desc">مشرف، معلم، طالب — كل دور يرى ما يخصه فقط بأمان تام.</div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ HOW IT WORKS ══ -->
+<section class="section reveal">
+  <div style="text-align:center;margin-bottom:52px">
+    <div class="section-label">✦ كيف يعمل</div>
+    <h2 class="section-title">ابدأ في ٣ خطوات</h2>
+  </div>
+
+  <div class="steps-wrap">
+    <div class="steps-line"></div>
+    <div class="steps-grid">
+      <div class="step-item">
+        <div class="step-num">🏫</div>
+        <div class="step-title">أنشئ مركزك</div>
+        <div class="step-desc">سجّل مركزك في دقيقة واحدة بـ Google أو اسم مستخدم — بدون أي إعدادات معقدة.</div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">📖</div>
+        <div class="step-title">أضف الحلقات والطلاب</div>
+        <div class="step-desc">أنشئ حلقاتك وأضف طلابك مع بياناتهم ومستوياتهم في دقائق.</div>
+      </div>
+      <div class="step-item">
+        <div class="step-num">📊</div>
+        <div class="step-title">تابع وأبلغ</div>
+        <div class="step-desc">سجّل الجلسات يومياً واستخرج التقارير الأسبوعية والشهرية بنقرة واحدة.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ ROLES ══ -->
+<section class="section reveal">
+  <div style="text-align:center;margin-bottom:52px">
+    <div class="section-label">✦ الأدوار</div>
+    <h2 class="section-title">نظام صلاحيات متكامل</h2>
+  </div>
+
+  <div class="roles-grid">
+    <div class="role-card supervisor">
+      <div class="role-icon">🏫</div>
+      <div class="role-title">المشرف</div>
+      <div class="role-desc">يدير المركز كاملاً، يرى جميع الحلقات والإحصائيات الشاملة.</div>
+      <div class="role-perms">
+        <div class="role-perm">إدارة جميع الحلقات</div>
+        <div class="role-perm">لوحة تحكم مركزية</div>
+        <div class="role-perm">إنشاء حسابات المعلمين</div>
+        <div class="role-perm">تصدير تقارير شاملة</div>
+      </div>
+    </div>
+    <div class="role-card teacher">
+      <div class="role-icon">👨‍🏫</div>
+      <div class="role-title">المعلم</div>
+      <div class="role-desc">يدير حلقته الخاصة — الطلاب، الجلسات، والتقارير.</div>
+      <div class="role-perms">
+        <div class="role-perm">إدارة حلقته فقط</div>
+        <div class="role-perm">تسجيل الحضور والحفظ</div>
+        <div class="role-perm">إنشاء حسابات الطلاب</div>
+        <div class="role-perm">إرسال تقارير واتساب</div>
+      </div>
+    </div>
+    <div class="role-card student">
+      <div class="role-icon">👤</div>
+      <div class="role-title">الطالب</div>
+      <div class="role-desc">يتابع تقدمه في الحفظ والحضور من المنزل بحسابه الخاص.</div>
+      <div class="role-perms">
+        <div class="role-perm">عرض تقدمه في الحفظ</div>
+        <div class="role-perm">متابعة سجل الحضور</div>
+        <div class="role-perm">عرض الملاحظات</div>
+        <div class="role-perm">قراءة فقط (بدون تعديل)</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ PRICING ══ -->
+<section class="pricing-section reveal">
+  <div class="pricing-box">
+    <div class="pricing-badge">👑 العرض الذهبي — لفترة محدودة</div>
+    <h2 class="pricing-title">ملكية مدى الحياة<br>بسعر رمزي واحد</h2>
+    <div class="pricing-price">مجاناً</div>
+    <div class="pricing-price-note">ادفع مرة واحدة فقط — لا اشتراكات شهرية أبداً</div>
+    <p class="pricing-sub">
+      بدلاً من دفع رسوم شهرية لا تنتهي، احصل على كامل النظام بتكلفة رمزية لمرة واحدة وتمتع به للأبد — كل التحديثات والمميزات المستقبلية مشمولة.
+    </p>
+    <div class="pricing-perks">
+      <div class="pricing-perk">
+        <div class="pricing-perk-icon">♾️</div>
+        وصول مدى الحياة بلا انقطاع
+      </div>
+      <div class="pricing-perk">
+        <div class="pricing-perk-icon">🔄</div>
+        جميع التحديثات المستقبلية مجاناً
+      </div>
+      <div class="pricing-perk">
+        <div class="pricing-perk-icon">☁️</div>
+        تخزين سحابي غير محدود للبيانات
+      </div>
+      <div class="pricing-perk">
+        <div class="pricing-perk-icon">🛡️</div>
+        دعم فني مدى الحياة
+      </div>
+      <div class="pricing-perk">
+        <div class="pricing-perk-icon">📤</div>
+        تصدير التقارير بصيغ متعددة
+      </div>
+    </div>
+    <a href="https://ke3haker-eng.github.io/markaz-alkitab/app/" class="btn-primary" style="font-size:16px;padding:17px 44px;position:relative;z-index:1">
+      🚀 ابدأ الآن مجاناً
+    </a>
+  </div>
+</section>
+
+<!-- ══ CTA ══ -->
+<section class="cta-section reveal">
+  <div class="cta-box">
+    <h2 class="cta-title">جاهز لرفع مستوى<br>مركزك التحفيظي؟</h2>
+    <p class="cta-sub">
+      لا تحتاج بطاقة ائتمانية. لا تثبيت. فقط سجّل مركزك وابدأ في إدارة حلقاتك فوراً.
+    </p>
+    <a href="https://ke3haker-eng.github.io/markaz-alkitab/app/" class="btn-primary" style="font-size:16px;padding:17px 44px;position:relative;z-index:1">
+      🚀 ابدأ مجاناً الآن
+    </a>
+  </div>
+</section>
+
+<!-- ══ DEVELOPER CARD ══ -->
+<section class="dev-section reveal">
+  <div style="text-align:center;margin-bottom:32px">
+    <div class="section-label">✦ المطوّر</div>
+    <h2 class="section-title" style="font-size:clamp(20px,4vw,30px)">تواصل مع المطوّر</h2>
+  </div>
+  <div class="dev-card">
+
+    <!-- أيقونة هندسية للمطور -->
+    <div class="dev-monogram">
+      <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="40" cy="40" r="38" stroke="rgba(16,185,129,0.25)" stroke-width="1"/>
+        <circle cx="40" cy="40" r="30" stroke="rgba(16,185,129,0.15)" stroke-width="0.8"/>
+        <polygon points="40,6 52,32 80,32 58,50 66,76 40,59 14,76 22,50 0,32 28,32"
+                 stroke="rgba(212,168,67,0.3)" stroke-width="0.8" fill="none"/>
+        <circle cx="40" cy="40" r="12"
+                fill="none" stroke="rgba(16,185,129,0.5)" stroke-width="1.2"/>
+        <!-- حرف م -->
+        <text x="40" y="46" text-anchor="middle" font-family="Tajawal,sans-serif"
+              font-size="16" font-weight="900" fill="url(#devGrad)">م</text>
+        <defs>
+          <linearGradient id="devGrad" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#10b981"/>
+            <stop offset="100%" stop-color="#d4a843"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+
+    <div class="dev-label">مطوّر النظام</div>
+    <div class="dev-name">محمد عماد الدين ياسين</div>
+    <div class="dev-title">مطوّر تطبيقات ويب · متخصص في منصات القرآن الكريم</div>
+    <div class="dev-divider"></div>
+
+    <!-- شبكة التواصل الاجتماعي -->
+    <div class="dev-socials">
+
+      <!-- واتساب -->
+      <a href="https://wa.me/972594799748" class="dev-social whatsapp" target="_blank" rel="noopener">
+        <div class="dev-social-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+          </svg>
+        </div>
+        <span class="dev-social-name">واتساب</span>
+      </a>
+
+      <!-- فيسبوك -->
+      <a href="https://www.facebook.com/share/14g1jfT8vfx/" class="dev-social facebook" target="_blank" rel="noopener">
+        <div class="dev-social-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+          </svg>
+        </div>
+        <span class="dev-social-name">فيسبوك</span>
+      </a>
+
+      <!-- انستقرام -->
+      <a href="https://www.instagram.com/mohammed_yasein_2005?igsh=d3o3ZTduamUzMmk2" class="dev-social instagram" target="_blank" rel="noopener">
+        <div class="dev-social-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+          </svg>
+        </div>
+        <span class="dev-social-name">انستقرام</span>
+      </a>
+
+      <!-- جيميل -->
+      <a href="mailto:ke3haker@gmail.com" class="dev-social gmail">
+        <div class="dev-social-icon">
+          <svg viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.910 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+          </svg>
+        </div>
+        <span class="dev-social-name">البريد</span>
+      </a>
+
+    </div>
+  </div>
+</section>
+
+<!-- ══ FOOTER ══ -->
+<footer>
+  <p style="margin-bottom:8px">
+    <span class="f-brand">نظام الرضوان</span> — منصة إدارة حلقات تحفيظ القرآن الكريم
+  </p>
+  <p style="margin-bottom:6px">جميع البيانات محفوظة وآمنة · مبني بـ <span class="f-heart">❤️</span> لخدمة كتاب الله</p>
+  <p>© ٢٠٢٥ <a href="#">نظام الرضوان</a> — جميع الحقوق محفوظة</p>
+</footer>
+
+<script>
+/* ── نجوم عشوائية ── */
+(function(){
+  const layer = document.getElementById('starsLayer');
+  const toArabic = n => n.toString().replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[d]);
+  for(let i=0;i<55;i++){
+    const s=document.createElement('div');
+    s.className='star';
+    const size = Math.random()*3+1.5;
+    s.style.cssText=`
+      width:${size}px;height:${size}px;
+      top:${Math.random()*100}%;
+      left:${Math.random()*100}%;
+      --dur:${(Math.random()*4+2).toFixed(1)}s;
+      --delay:-${(Math.random()*5).toFixed(1)}s;
+    `;
+    layer.appendChild(s);
+  }
+})();
+
+/* ── NAV scroll class ── */
+window.addEventListener('scroll',()=>{
+  document.getElementById('mainNav').classList.toggle('scrolled',window.scrollY>40);
+});
+
+/* ── Reveal on scroll ── */
+const revealObs = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{if(e.isIntersecting)e.target.classList.add('visible')});
+},{threshold:0.1});
+document.querySelectorAll('.reveal,.reveal-left').forEach(el=>revealObs.observe(el));
+
+/* ── Hero mini-counter animation ── */
+const toAr = n => n.toString().replace(/\d/g,d=>'٠١٢٣٤٥٦٧٨٩'[d]);
+function animNum(el, target, suffix='', duration=1600){
+  let start=null;
+  const step=ts=>{
+    if(!start)start=ts;
+    const p=Math.min((ts-start)/duration,1);
+    const e=1-Math.pow(1-p,3);
+    el.textContent=toAr(Math.floor(e*target))+suffix;
+    if(p<1)requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
+/* تشغيل الأرقام عند ظهور الـ preview */
+const heroObs = new IntersectionObserver(entries=>{
+  if(entries[0].isIntersecting){
+    setTimeout(()=>animNum(document.getElementById('cnt1'),24),400);
+    setTimeout(()=>animNum(document.getElementById('cnt2'),92,'٪'),600);
+    setTimeout(()=>animNum(document.getElementById('cnt3'),4),800);
+    heroObs.disconnect();
+  }
+},{threshold:0.3});
+const preview=document.querySelector('.hero-preview');
+if(preview)heroObs.observe(preview);
+
+/* ── Stats section counter ── */
+const statsObs = new IntersectionObserver(entries=>{
+  entries.forEach(e=>{
+    if(e.isIntersecting){
+      e.target.querySelectorAll('[data-count]').forEach(n=>{
+        animNum(n,parseInt(n.dataset.count));
+      });
+      statsObs.unobserve(e.target);
+    }
+  });
+},{threshold:0.3});
+const statsEl=document.querySelector('.stats-section');
+if(statsEl)statsObs.observe(statsEl);
+
+/* ── Feature cards stagger ── */
+document.querySelectorAll('.feature-card').forEach((c,i)=>{
+  c.style.transitionDelay=`${i*0.04}s`;
+});
+</script>
+</body>
+</html>
