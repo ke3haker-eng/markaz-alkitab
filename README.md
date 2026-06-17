@@ -11,34 +11,6 @@ sw.js            ← Service Worker (عمل أوفلاين)
 icon-192.png     ← أيقونة صغيرة
 icon-512.png     ← أيقونة كبيرة
 ```
-
----
-
-## 🚀 خطوات النشر على GitHub Pages
-
-### 1. إنشاء Repository
-- اذهب إلى [github.com](https://github.com) وسجّل دخول
-- اضغط **New repository**
-- اختر اسماً مثل: `markaz-alkitab`
-- اجعله **Public**
-- اضغط **Create repository**
-
-### 2. رفع الملفات
-- اضغط **uploading an existing file**
-- ارفع الملفات الخمسة كلها مرة واحدة
-- اضغط **Commit changes**
-
-### 3. تفعيل GitHub Pages
-- اذهب إلى **Settings** → **Pages**
-- في **Source** اختر: `Deploy from a branch`
-- في **Branch** اختر: `main` / `root`
-- اضغط **Save**
-- انتظر دقيقة ثم سيظهر الرابط:
-
-```
-https://اسم-المستخدم.github.io/markaz-alkitab
-```
-
 ---
 
 ## 📱 تثبيت التطبيق على الجوال
