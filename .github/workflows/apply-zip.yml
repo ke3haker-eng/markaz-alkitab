@@ -1,0 +1,35 @@
+name: Apply uploaded zip
+on:
+  workflow_dispatch:
+    inputs:
+      zip:
+        description: "اسم ملف zip المرفوع في جذر المستودع"
+        default: "markaz-alkitab-v2.0.0.zip"
+permissions:
+  contents: write
+  actions: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Replace repository contents with the zip
+        env:
+          ZIP: ${{ inputs.zip }}
+        run: |
+          set -euo pipefail
+          [ -f "$ZIP" ] || { echo "الملف $ZIP غير موجود في جذر المستودع. ارفعه أولاً ثم أعد التشغيل."; exit 1; }
+          NEW="$RUNNER_TEMP/new"; rm -rf "$NEW"; mkdir -p "$NEW"
+          unzip -q "$ZIP" -d "$NEW"
+          SRC="$NEW/markaz-alkitab"
+          if [ ! -f "$SRC/index.html" ]; then echo "الأرشيف لا يحوي markaz-alkitab/index.html"; exit 1; fi
+          rm -rf "$SRC/.github"
+          git ls-files -z | while IFS= read -r -d '' f; do
+            case "$f" in .github/*) continue;; esac
+            git rm -q -f -- "$f"
+          done
+          cp -a "$SRC"/. .
+          git add -A
+          if git diff --cached --quiet; then echo "لا توجد تغييرات"; exit 0; fi
+          git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" commit -q -m "Update to markaz-alkitab (applied from uploaded zip)"
+          git push
