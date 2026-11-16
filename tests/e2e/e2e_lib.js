@@ -16,6 +16,7 @@ const HTML = process.env.APP_HTML || path.join(__dirname, '..', '..', 'app', 'in
 const FAKE = fs.readFileSync(path.join(__dirname, 'fake_supabase.js'), 'utf8');
 async function openApp(storage){
   let html = fs.readFileSync(HTML, 'utf8').replace(/<script src="https:\/\/[^"]+"><\/script>/g, '');
+  html = html.replace(/<script src="competition\.js[^"]*"><\/script>/, () => '<script>' + fs.readFileSync(path.join(path.dirname(HTML), 'competition.js'), 'utf8').replace(/<\/script>/g, '<\\/script>') + '</script>');
   html = html.replace('<head>', () => '<head><script>' + FAKE.replace(/<\/script>/g, '<\\/script>') + '</script>');
   const vc = new VirtualConsole(); const jerr = [];
   vc.on('jsdomError', e => { const m = String((e.detail && e.detail.message) || e.message); if(!/Not implemented|canvas/i.test(m)) jerr.push(m); });

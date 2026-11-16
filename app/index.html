@@ -293,7 +293,7 @@ body{font-family:'IBM Plex Sans Arabic',sans-serif;background:var(--bg);color:va
 
 .ntab{
   display:flex;flex-direction:column;align-items:center;
-  gap:3px;padding:6px 18px;border-radius:99px;
+  gap:3px;padding:6px 11px;border-radius:99px;
   cursor:pointer;
   color:rgba(255,255,255,.4);
   font-size:9px;font-weight:700;letter-spacing:.04em;
@@ -1517,7 +1517,7 @@ textarea.fi{resize:none}
         <span class="sp-tab-icon">🗺️</span>تقدمي
       </div>
       <div class="sp-tab" data-tab="badges" onclick="spSwitchTab('badges')">
-        <span class="sp-tab-icon">🏅</span>إنجازاتي
+        <span class="sp-tab-icon">🏆</span>فرسان القرآن
       </div>
     </div>
   </div>
@@ -1615,10 +1615,8 @@ textarea.fi{resize:none}
 
     <!-- TAB: BADGES -->
     <div class="sp-panel" id="sp-panel-badges">
-      <div class="sp-sec-title">
-        <span class="sp-sec-dot" style="background:linear-gradient(to bottom,#f59e0b,#d97706)"></span>
-        الإنجازات والشارات
-      </div>
+      <div style="text-align:center;padding:32px;color:var(--sp-muted);font-size:13px">⏳ جارٍ التحميل...</div>
+    </div>
       <div id="spBadgesGrid" class="sp-badges-grid">
         <div style="text-align:center;padding:32px;color:var(--sp-muted);font-size:13px;grid-column:1/-1">⏳ جارٍ التحميل...</div>
       </div>
@@ -1642,6 +1640,7 @@ textarea.fi{resize:none}
       </div>
     </div>
     <div class="topbar-actions" id="halaqatTopbarActions">
+      <button id="hqCompBtn" onclick="CompUI.open()" class="tbtn tbtn-outline" style="font-size:13px;padding:8px 12px;display:none" title="دوري فرسان القرآن">🏆</button>
       <button onclick="showCenterSettings()" class="tbtn tbtn-outline" style="font-size:13px;padding:8px 12px">⚙️</button>
     </div>
   </div>
@@ -1792,6 +1791,7 @@ textarea.fi{resize:none}
     <div class="ntab" id="nt-reports" onclick="goTab('reports')">
       <span class="ntab-icon">📊</span><span>التقارير</span>
     </div>
+    <div class="ntab" id="nt-comp" onclick="CompUI.open()" style="position:relative"><span class="ntab-icon">🏆</span><span>المسابقة</span></div>
     <div class="ntab" id="nt-inbox" onclick="goTab('inbox')" style="position:relative">
       <span class="ntab-icon">🔔</span><span>الرسائل</span>
       <span id="inboxBadge" style="display:none;position:absolute;top:4px;right:4px;width:16px;height:16px;background:#ef4444;border-radius:50%;font-size:9px;font-weight:900;color:#fff;display:none;align-items:center;justify-content:center;border:2px solid var(--bg)">0</span>
@@ -2196,8 +2196,8 @@ textarea.fi{resize:none}
         <div id="dqStatus" style="font-size:10px;color:var(--muted);margin-top:6px;font-weight:500"></div>
       </div>
 
-      <!-- إعدادات الإنجازات -->
-      <div style="background:#faf5ff;padding:14px;border-radius:var(--r2);border:1.5px solid #e9d5ff">
+      <!-- إعدادات الإنجازات (استُبدلت بدوري فرسان القرآن) -->
+      <div style="display:none;background:#faf5ff;padding:14px;border-radius:var(--r2);border:1.5px solid #e9d5ff">
         <div class="row-between">
           <div>
             <p class="f10 fw8" style="color:#7c3aed">🏅 إنجازات الطلاب</p>
@@ -2816,8 +2816,8 @@ const _supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSe
    كل العمليات الحساسة على الحسابات تمر عبر دوال Supabase (RPC)
    فلا تُقرأ كلمات المرور ولا الـ hash في المتصفح إطلاقاً.
 ════════════════════════════════════════════════ */
-const APP_VERSION = '2.0.0';
-const APP_BUILD   = '2026-11-12';
+const APP_VERSION = '2.1.0';
+const APP_BUILD   = '2026-11-14';
 
 let _authToken = null;          /* رمز الجلسة (يصدره السيرفر عند الدخول) */
 let _silentLoginTried = false;
@@ -5090,7 +5090,7 @@ function spSwitchTab(tab){
   });
   document.getElementById('spBody').scrollTop = 0;
   if(tab === 'progress') _spRenderProgress(_spAllRecords);
-  if(tab === 'badges')   _spRenderBadges(_spAllRecords);
+  if(tab === 'badges')   { if(window.CompUI) CompUI.renderStudent(document.getElementById('sp-panel-badges')); else _spRenderBadges(_spAllRecords); }
 }
 
 /* ── فلترة السجلات ── */
@@ -5809,7 +5809,7 @@ function unlockCenter(){
   if(_isSupMsg()){
     setTimeout(_addSupervisorMsgBtn, 400);
   }
-  setTimeout(()=>{ _checkBackupReminder(); _flushAudit(); }, 2500);
+  setTimeout(()=>{ _checkBackupReminder(); _flushAudit(); if(window.CompUI) CompUI.syncNav(); }, 2500);
   /* تشغيل Realtime لقائمة الحلقات (يُحدِّث المشرف فوراً عند أي تغيير) */
   if(centerCfg.supabase_center_id){
     _initHalaqatRealtime();
@@ -6301,7 +6301,8 @@ const _PERM_DEFS = [
   {k:'teachers', t:'قبول المعلمين',            d:'قبول أو رفض طلبات المعلمين الجدد'},
   {k:'reports',  t:'التقارير والتصدير',        d:'عرض التقارير وتصديرها (Excel/PDF/HTML)'},
   {k:'messages', t:'الرسائل والشكاوى',         d:'الرد على المعلمين والطلاب'},
-  {k:'backup',   t:'النسخ الاحتياطي',          d:'تصدير واستيراد النسخ الاحتياطية'}
+  {k:'backup',   t:'النسخ الاحتياطي',          d:'تصدير واستيراد النسخ الاحتياطية'},
+  {k:'competitions', t:'المسابقات والواجبات',  d:'إدارة دوري فرسان القرآن والواجبات وتقييم الطلاب'}
 ];
 let _staffRows = [];
 
@@ -7130,6 +7131,7 @@ function _applyCenterIcon(){
 ════════════════════════════════════════════════ */
 let currentTab='students';
 function goTab(tab){
+  if(window.CompUI) CompUI.syncNav();
   if(tab===currentTab&&tab!=='students') return;
   currentTab=tab;
 
@@ -13618,7 +13620,7 @@ async function _tryTeacherLogin(username, password){
 }
 
 function _openTeacherHalaqa(hid){
-  setTimeout(()=>{ _checkBackupReminder(); _flushAudit(); }, 3000);
+  setTimeout(()=>{ _checkBackupReminder(); _flushAudit(); if(window.CompUI) CompUI.syncNav(); }, 3000);
   /* تأكد من تحميل centerCfg قبل فتح الحلقة */
   if(!centerCfg.supabase_center_id){
     try{
@@ -13863,5 +13865,6 @@ window.addEventListener('appinstalled', () => {
   toast('✅ نظام الرضوان — تم التثبيت بنجاح 🎉');
 });
 </script>
+<script src="competition.js?v=2.1.0"></script>
 </body>
 </html>

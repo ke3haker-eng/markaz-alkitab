@@ -107,7 +107,7 @@ language plpgsql immutable set search_path = public, extensions, pg_temp as $$
 declare k text; out jsonb := '{}'::jsonb;
 begin
   if p is null or jsonb_typeof(p) <> 'object' then return out; end if;
-  foreach k in array array['students','records','halaqat','teachers','reports','messages','backup'] loop
+  foreach k in array array['students','records','halaqat','teachers','reports','messages','backup','competitions'] loop
     if (p ->> k) in ('true','false') then out := out || jsonb_build_object(k, (p ->> k)::boolean); end if;
   end loop;
   return out;
@@ -607,6 +607,12 @@ begin
   c := public._app_auth(p_token);
   if c.id is null or c.role::text <> 'masool' then return jsonb_build_object('ok', false, 'error', 'forbidden'); end if;
   delete from public.app_sessions where user_id in (select id::text from public.users where center_id::text = p_center_id);
+  -- الطلاب والسجلات عبر الحلقات (يعمل حتى لو لم يكن لهذه الجداول عمود center_id)
+  foreach t in array array['records','students'] loop
+    if exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = t and column_name = 'halaqa_id') then
+      execute format('delete from public.%I where halaqa_id::text in (select id::text from public.halaqat where center_id::text = $1)', t) using p_center_id;
+    end if;
+  end loop;
   foreach t in array array['records','students','halaqat','messages','daily_questions','deleted_ids','users'] loop
     if exists (select 1 from information_schema.columns
                 where table_schema = 'public' and table_name = t and column_name = 'center_id') then

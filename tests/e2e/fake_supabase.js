@@ -62,10 +62,11 @@
   }
   window.supabase = { createClient(){
     return {
-      from: Q,
+      from: (t) => { if(window.__offline){ const dead = new Proxy({}, {get(_, k){ if(k === 'then') return (res) => res({data: null, error: {message: 'Failed to fetch'}}); return () => dead; }}); return dead; } return Q(t); },
       async rpc(name, args){
         const keys = Object.keys(args || {});
-        const params = keys.map(k => { const v = args[k]; return (v !== null && typeof v === 'object' && !Array.isArray(v)) ? JSON.stringify(v) : v; });
+        if(window.__offline) return {data: null, error: {message: 'Failed to fetch'}};
+        const params = keys.map(k => { const v = args[k]; if(v !== null && typeof v === 'object'){ if(Array.isArray(v)) return v.some(x => x !== null && typeof x === 'object') ? JSON.stringify(v) : v; return JSON.stringify(v); } return v; });
         const sql = 'select public.' + name + '(' + keys.map((k, i) => k + ' => $' + (i + 1)).join(',') + ') as r';
         const r = await window.__pg(sql, params);
         if(r.error) return {data: null, error: r.error};
