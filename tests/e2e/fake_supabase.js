@@ -66,7 +66,7 @@
       async rpc(name, args){
         const keys = Object.keys(args || {});
         if(window.__offline) return {data: null, error: {message: 'Failed to fetch'}};
-        const params = keys.map(k => { const v = args[k]; if(v !== null && typeof v === 'object'){ if(Array.isArray(v)) return v.some(x => x !== null && typeof x === 'object') ? JSON.stringify(v) : v; return JSON.stringify(v); } return v; });
+        const params = keys.map(k => { const v = args[k]; if(v !== null && typeof v === 'object'){ if(Array.isArray(v)) return (k === 'p_order' || v.some(x => x !== null && typeof x === 'object')) ? JSON.stringify(v) : v; return JSON.stringify(v); } return v; });
         const sql = 'select public.' + name + '(' + keys.map((k, i) => k + ' => $' + (i + 1)).join(',') + ') as r';
         const r = await window.__pg(sql, params);
         if(r.error) return {data: null, error: r.error};

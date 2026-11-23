@@ -1,5 +1,4 @@
 -- يحاكي مشروع Supabase القديم (قبل التحديث)
-create role anon nologin; create role authenticated nologin; create role service_role nologin bypassrls;
 create schema extensions; create extension pgcrypto with schema extensions;
 grant usage on schema public, extensions to anon, authenticated, service_role;
 create table centers(id uuid primary key default gen_random_uuid(), name text, manager_name text, status text default 'active', icon text, created_at timestamptz default now());

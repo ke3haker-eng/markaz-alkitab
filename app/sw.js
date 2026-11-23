@@ -3,12 +3,12 @@
    يحفظ الملفات محلياً للعمل بدون إنترنت
 ═══════════════════════════════════════════ */
 
-const CACHE_NAME = 'markaz-alkitab-v2-1-0';
+const CACHE_NAME = 'markaz-alkitab-v2-2-0';
 
 const ASSETS = [
   './',
   './index.html',
-  './competition.js',
+  './competition.js?v=2.2.0',
   './manifest.json',
   './icon-192.png',
   './icon-512.png',

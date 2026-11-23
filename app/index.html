@@ -2816,8 +2816,8 @@ const _supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSe
    كل العمليات الحساسة على الحسابات تمر عبر دوال Supabase (RPC)
    فلا تُقرأ كلمات المرور ولا الـ hash في المتصفح إطلاقاً.
 ════════════════════════════════════════════════ */
-const APP_VERSION = '2.1.0';
-const APP_BUILD   = '2026-11-14';
+const APP_VERSION = '2.2.0';
+const APP_BUILD   = '2026-11-17';
 
 let _authToken = null;          /* رمز الجلسة (يصدره السيرفر عند الدخول) */
 let _silentLoginTried = false;
@@ -2903,6 +2903,21 @@ async function _ensureToken(force){
   if(!navigator.onLine || _silentLoginTried) return null;
   _silentLoginTried = true;
   const u = _currentUser;
+  if(u && u.role === 'student'){
+    let pw = u._localPassword || null;
+    if(!pw){
+      const keys = u.halaqa_id ? [getHalaqaKey(u.halaqa_id)] : Object.keys(localStorage).filter(k => k.startsWith('ridwan_hq_'));
+      for(const k of keys){
+        try { const d = JSON.parse(localStorage.getItem(k) || 'null'); const s = d && (d.students || []).find(x => x.username === u.username); if(s && s.password){ pw = s.password; break; } } catch(e){}
+      }
+    }
+    if(pw){
+      try {
+        const r = await _rpc('app_login', {p_username: u.username, p_password: pw, p_kind: 'student'});
+        if(r && r.ok){ _authToken = r.token; _saveSession(_currentUser); return _authToken; }
+      } catch(e){}
+    }
+  }
   if(u && u.role === 'teacher'){
     const hq = (halaqatList || []).find(h => h.id === u.halaqa_id);
     if(hq && hq.teacherUsername && hq.teacherPassword){
@@ -5038,7 +5053,7 @@ async function _refreshStudentFromSupabase(user){
     /* تحديث الجلسة بـ halaqa_id لتسريع البحث المحلي */
     if(!_currentUser?.halaqa_id){
       _currentUser = {...(_currentUser||user), halaqa_id:hid};
-      localStorage.setItem('ridwan_session', JSON.stringify(_currentUser));
+      _saveSession(_currentUser);   /* يحفظ رمز الجلسة ولا يخزّن كلمة المرور */
     }
   } catch(e){
     console.warn('_refreshStudentFromSupabase error:', e.message);
@@ -5697,6 +5712,9 @@ window.onload = async () => {
           }
         } catch(e){ /* لا اتصال أو تأخر: نكمل بالجلسة المحلية */ }
       }
+
+      /* طالب بجلسة قديمة بلا رمز (من النسخ السابقة): نستعيد الرمز تلقائياً دون إزعاجه */
+      if(!_authToken && user.role === 'student' && navigator.onLine){ _currentUser = user; await _ensureToken(); }
 
       /* ── مالك التطبيق ── */
       if(user.role === 'masool'){
@@ -13865,6 +13883,6 @@ window.addEventListener('appinstalled', () => {
   toast('✅ نظام الرضوان — تم التثبيت بنجاح 🎉');
 });
 </script>
-<script src="competition.js?v=2.1.0"></script>
+<script src="competition.js?v=2.2.0"></script>
 </body>
 </html>

@@ -58,12 +58,33 @@ function netMsg(e){
   if(!online() || (typeof _isNetErr === 'function' && _isNetErr(e))) return 'لا يوجد اتصال بالإنترنت';
   return (e && e.message) || 'خطأ غير متوقع';
 }
+/* ذاكرة قراءة محلية: عند انقطاع الإنترنت تُعرض آخر نسخة محفوظة (للقراءة فقط) */
+const LAST = {stale: null};
+const CACHE_READS = new Set(['comp_list', 'comp_get', 'comp_leaderboard', 'comp_student_detail', 'comp_grid', 'comp_roster', 'comp_defaults', 'comp_report', 'asg_list', 'asg_get', 'chat2_threads', 'chat2_get']);
+const myUid = () => (typeof _currentUser !== 'undefined' && _currentUser && _currentUser.id) || '';
+const ckey = (n, a) => 'ridwan_cc:' + myUid() + ':' + n + ':' + JSON.stringify(a || {}, Object.keys(a || {}).sort());
+function cacheSet(n, a, r){
+  try {
+    const body = JSON.stringify({t: Date.now(), r}); if(body.length > 220000) return;
+    localStorage.setItem(ckey(n, a), body);
+    let tot = 0; const ks = [];
+    for(let i = 0; i < localStorage.length; i++){ const k = localStorage.key(i); if(k && k.startsWith('ridwan_cc:')){ const v = localStorage.getItem(k) || ''; tot += v.length; let t = 0; try { t = JSON.parse(v).t; } catch(e){} ks.push([k, t, v.length]); } }
+    if(tot > 2000000){ ks.sort((x, y) => x[1] - y[1]); for(const k of ks){ localStorage.removeItem(k[0]); tot -= k[2]; if(tot < 1400000) break; } }
+  } catch(e){ /* الذاكرة ممتلئة: نتجاهل */ }
+}
+function cacheGet(n, a){ try { return JSON.parse(localStorage.getItem(ckey(n, a)) || 'null'); } catch(e){ return null; } }
+const staleHtml = () => LAST.stale ? `<div class="cu-warn">📴 تعرض نسخة محفوظة من ${fmtT(LAST.stale)} — ستتحدث تلقائياً عند عودة الاتصال، ويمكنك متابعة التقييم وسيُرفع لاحقاً.</div>` : '';
 /* استدعاء دالة سيرفر برمز الجلسة؛ يرمي خطأ بنص عربي واضح */
 async function api(name, args){
   let r;
   try { r = await _rpcT(name, args || {}, true); }
-  catch(e){ const x = new Error(netMsg(e)); x.net = !online() || (typeof _isNetErr === 'function' && _isNetErr(e)); throw x; }
-  if(!r || r.ok === false){ const x = new Error(errMsg(r)); x.r = r; throw x; }
+  catch(e){
+    const net = !online() || (typeof _isNetErr === 'function' && _isNetErr(e));
+    if(net && CACHE_READS.has(name)){ const c = cacheGet(name, args); if(c){ LAST.stale = c.t; return Object.assign({}, c.r, {_cached: c.t}); } }
+    const x = new Error(netMsg(e)); x.net = net; throw x;
+  }
+  if(!r || r.ok === false){ const x = new Error(errMsg(r)); x.r = r; x.auth = !!(r && r.error === 'auth'); throw x; }
+  if(CACHE_READS.has(name)) cacheSet(name, args, r);
   return r;
 }
 
@@ -139,6 +160,10 @@ const CSS = `
 .cu-bub small{display:block;opacity:.7;font-size:9.5px;margin-top:3px}
 .cu-bub.pend{opacity:.6}
 .cu-send{display:flex;gap:8px;margin-top:8px}.cu-send .cu-in{flex:1}
+.cu-quote{border-right:3px solid var(--g2);padding:5px 9px;margin-bottom:6px;font-size:11px;background:rgba(15,23,42,.07);border-radius:9px;cursor:pointer;line-height:1.6}
+.cu-bub.me .cu-quote{background:rgba(255,255,255,.2)}
+.cu-media img,.cu-media video{display:block;margin-bottom:4px}.cu-media audio{max-width:210px;height:38px}
+.cu-reddot{position:absolute;top:1px;left:4px;min-width:17px;height:17px;border-radius:99px;background:#ef4444;color:#fff;font-size:9.5px;font-weight:900;font-style:normal;display:flex;align-items:center;justify-content:center;padding:0 4px;box-shadow:0 0 0 2px rgba(255,255,255,.9);z-index:5;line-height:1}
 /* ===== واجهة المعلم (ملء الشاشة) ===== */
 .cu-overlay{position:fixed;inset:0;z-index:9000;background:var(--bg);display:flex;flex-direction:column}
 .cu-top{display:flex;align-items:center;gap:8px;padding:12px 12px 8px;background:linear-gradient(135deg,#0e9f6e,#2563eb);color:#fff}
@@ -168,6 +193,7 @@ const CSS = `
 .cu-g input.dirty{border-color:var(--amber);background:#fffbeb;color:#78350f}.cu-g input.ok{border-color:#10b981;background:#ecfdf5}
 .cu-g input.bad{border-color:#ef4444;background:#fef2f2}.cu-g input.pend{border-style:dashed;border-color:#f59e0b}
 .cu-g input:disabled{opacity:.55}
+.cu-g input::placeholder{color:var(--mut);opacity:.38;font-weight:700}
 .cu-g .rem{display:block;font-size:9px;color:var(--mut);margin-top:2px}
 .cu-bar2{position:fixed;left:0;right:0;bottom:0;z-index:9100;padding:10px 12px 14px;background:var(--card);border-top:1px solid var(--bd);box-shadow:0 -6px 20px rgba(15,23,42,.1)}
 .cu-qk{display:flex;gap:6px;overflow-x:auto;margin-bottom:8px}
@@ -185,7 +211,9 @@ function injectCss(){
 /* ───────── مكوّنات واجهة عامة ───────── */
 const skel = (n = 3) => Array.from({length: n}, () => '<div class="cu-skel"></div>').join('');
 const emptyBox = (icon, title, sub) => `<div class="cu-empty"><div class="i">${icon}</div><b>${E(title)}</b>${sub ? `<div>${E(sub)}</div>` : ''}</div>`;
-const errBox = (msg, act) => `<div class="cu-err">⚠️ ${E(msg)}${act ? `<div style="margin-top:8px"><button class="cu-btn sm" data-act="${act}">إعادة المحاولة</button></div>` : ''}</div>`;
+const errBox = (msg, act, label) => `<div class="cu-err">⚠️ ${E(msg)}${act ? `<div style="margin-top:8px"><button class="cu-btn sm" data-act="${act}">${E(label || 'إعادة المحاولة')}</button></div>` : ''}</div>`;
+const eb = (e, act) => (e && e.auth) ? errBox(e.message, 'relogin', 'تسجيل الدخول من جديد') : errBox((e && e.message) || e, act);
+const reLogin = () => { if(role() === 'student'){ if(typeof logoutStudent === 'function') logoutStudent(); } else if(typeof _doLogout === 'function') _doLogout(); };
 const stChip = st => { const s = STATE[st] || [st, 'gray']; return `<span class="cu-st ${s[1]}">${s[0]}</span>`; };
 const bar = pct => `<div class="cu-bar"><i style="width:${Math.max(0, Math.min(100, pct || 0))}%"></i></div>`;
 
@@ -289,20 +317,16 @@ async function sTick(){
     sUnread();
   } catch(e){}
 }
-async function sUnread(){
-  try {
-    const r = await api('chat_threads'); const n = r.unread || 0; const b = $('cuUnread');
-    if(b){ b.style.display = n > 0 && S.seg !== 'chat' ? 'flex' : 'none'; b.textContent = AD(n); }
-  } catch(e){}
-}
+async function sUnread(){ notifyTick(true); }
 function sMark(){ S.host.querySelectorAll('#cuSeg button').forEach(b => b.classList.toggle('on', b.dataset.seg === S.seg)); }
 function sGo(seg){
-  S.seg = seg; sMark(); clearInterval(S.chatTimer); S.chatTimer = null;
+  S.seg = seg; sMark(); clearInterval(S.chatTimer); S.chatTimer = null; chReset();
   if(seg === 'comp') sComp(false); else if(seg === 'asg'){ S.asgOpen = null; sAsg(); } else sChat();
 }
 
 const SH = {
   seg: t => sGo(t.dataset.seg),
+  relogin: () => reLogin(),
   retryComp: () => sComp(true),
   refresh: () => sComp(true),
   pick: t => { S.cid = t.dataset.id; S.d = null; S.showAll = false; S.showEnt = false; sComp(false); },
@@ -314,17 +338,17 @@ const SH = {
   opt: t => { S.ans[t.dataset.q] = Number(t.dataset.i); sAsgForm(); },
   tf: t => { S.ans[t.dataset.q] = t.dataset.v === '1'; sAsgForm(); },
   asgSubmit: () => sAsgSubmit(),
-  chatSend: () => sChatSend(),
-  chatRetry: t => sChatSend(t.dataset.id)
+  _x: 0
 };
 
 /* ── المسابقة ── */
 async function sComp(force, soft){
   const body = $('cuBody'); if(!body || S.seg !== 'comp') return;
+  LAST.stale = null;
   if(!S.comps || force){
     if(!soft) body.innerHTML = skel(4);
     try { S.comps = (await api('comp_list')).rows; }
-    catch(e){ if(!soft) body.innerHTML = errBox(e.message, 'retryComp'); return; }
+    catch(e){ if(!soft) body.innerHTML = eb(e, 'retryComp'); return; }
   }
   if(!S.comps.length){
     body.innerHTML = `<div class="cu-hero" style="opacity:.92"><h2>🏆 دوري فرسان القرآن</h2><div class="sub">30 يوماً من القرآن والعبادة والأخلاق</div></div>`
@@ -337,7 +361,7 @@ async function sComp(force, soft){
     try {
       const [g, lb, dt] = await Promise.all([api('comp_get', {p_id: cur.id}), api('comp_leaderboard', {p_comp: cur.id}), api('comp_student_detail', {p_comp: cur.id})]);
       S.d = {id: cur.id, comp: g.competition, cats: g.categories, lb, det: dt}; S.stamp = new Date();
-    } catch(e){ if(!soft) body.innerHTML = errBox(e.message, 'retryComp'); return; }
+    } catch(e){ if(!soft) body.innerHTML = eb(e, 'retryComp'); return; }
   }
   sRenderComp();
 }
@@ -409,14 +433,14 @@ function sRenderComp(){
   /* تحفيز */
   h += `<div class="cu-msg">${E(MOTIV[(dayOfYear() + (det.student_id ? String(det.student_id).length : 0)) % MOTIV.length])}</div>
     <div class="cu-mut" style="text-align:center;margin-top:10px">آخر تحديث ${S.stamp ? AD(S.stamp.toLocaleTimeString('ar-EG', {hour: '2-digit', minute: '2-digit'})) : ''} · <a href="#" data-act="refresh" style="color:var(--g);font-weight:800">تحديث 🔄</a></div>`;
-  body.innerHTML = h;
+  body.innerHTML = staleHtml() + h;
 }
 
 /* ── الواجبات ── */
 async function sAsg(){
   const body = $('cuBody'); if(!body) return;
   body.innerHTML = skel(3);
-  try { S.asg = (await api('asg_list')).rows; } catch(e){ body.innerHTML = errBox(e.message, 'asgBack'); return; }
+  try { S.asg = (await api('asg_list')).rows; } catch(e){ body.innerHTML = eb(e, 'asgBack'); return; }
   if(!S.asg.length){ body.innerHTML = emptyBox('📝', 'لا توجد واجبات حالياً', 'ستظهر هنا الواجبات التي ينشرها معلمك.'); return; }
   body.innerHTML = S.asg.map(a => {
     const my = a.my, due = a.due_at ? new Date(a.due_at) : null, late = due && due < new Date();
@@ -430,7 +454,7 @@ async function sAsg(){
 async function sAsgOpen(id){
   const body = $('cuBody'); body.innerHTML = skel(3);
   try { const r = await api('asg_get', {p_id: id}); S.asgOpen = r; S.ans = {}; sAsgForm(); }
-  catch(e){ body.innerHTML = errBox(e.message, 'asgBack'); }
+  catch(e){ body.innerHTML = eb(e, 'asgBack'); }
 }
 function sAsgForm(){
   const body = $('cuBody'), r = S.asgOpen; if(!r) return;
@@ -481,50 +505,11 @@ async function sAsgSubmit(){
   }
 }
 
-/* ── التواصل مع المعلم ── */
-async function sChat(){
-  const body = $('cuBody'); if(!body) return;
-  S.chat = {rows: [], last: 0, pend: S.chat.pend || []};
-  body.innerHTML = `<div class="cu-card"><div class="cu-h">💬 محادثة مع معلمك</div><div class="cu-chat" id="cuChatList">${skel(2)}</div>
-    <div class="cu-send"><input class="cu-in" id="cuChatIn" maxlength="1500" placeholder="اكتب رسالتك للمعلم…" onkeydown="if(event.key==='Enter'){CompUI._chatKey()}"><button class="cu-btn" data-act="chatSend">إرسال</button></div>
-    <div class="cu-mut" style="margin-top:6px">الرسائل يراها معلم حلقتك والمشرف فقط.</div></div>`;
-  await sChatPoll(true);
-  $('cuUnread') && ($('cuUnread').style.display = 'none');
-  S.chatTimer = setInterval(() => { if(sPanelVisible() && S.seg === 'chat') sChatPoll(false); }, 8000);
-}
-CU._chatKey = () => sChatSend();
-async function sChatPoll(first){
-  try {
-    const r = await api('chat_get', {p_student: null, p_after: S.chat.last, p_limit: 200});
-    if(r.rows.length){ S.chat.rows = S.chat.rows.concat(r.rows); S.chat.last = r.rows[r.rows.length - 1].id; }
-    sChatRender(first);
-  } catch(e){ if(first){ const l = $('cuChatList'); if(l) l.innerHTML = errBox(e.message, 'asgBack'); } }
-}
-function sChatRender(scroll){
-  const l = $('cuChatList'); if(!l) return;
-  const atBottom = l.scrollHeight - l.scrollTop - l.clientHeight < 60;
-  const rows = S.chat.rows.map(m => `<div class="cu-bub ${m.mine ? 'me' : 'th'}">${m.mine ? '' : `<b style="font-size:10.5px">${E(m.sender_name || 'المعلم')}</b><br>`}${E(m.body)}<small>${fmtT(m.created_at)}</small></div>`).join('')
-    + S.chat.pend.map(p => `<div class="cu-bub me pend">${E(p.body)}<small>⏳ لم تُرسل — ${p.failed ? `<a href="#" data-act="chatRetry" data-id="${p.id}" style="color:#fff;text-decoration:underline">إعادة الإرسال</a>` : 'جارٍ الإرسال…'}</small></div>`).join('');
-  l.innerHTML = rows || emptyBox('💬', 'ابدأ المحادثة', 'اكتب أول رسالة لمعلمك.');
-  if(scroll || atBottom) l.scrollTop = l.scrollHeight;
-}
-async function sChatSend(retryId){
-  const inp = $('cuChatIn'); let item;
-  if(retryId){ item = S.chat.pend.find(p => p.id === retryId); if(!item) return; item.failed = false; }
-  else { const v = (inp && inp.value || '').trim(); if(!v) return; item = {id: UID(), body: v, failed: false}; S.chat.pend.push(item); inp.value = ''; }
-  sChatRender(true);
-  try {
-    await api('chat_send', {p_student: null, p_body: item.body, p_op: item.id});
-    S.chat.pend = S.chat.pend.filter(p => p.id !== item.id);
-    await sChatPoll(false); sChatRender(true);
-  } catch(e){ item.failed = true; sChatRender(true); toast2('❌ لم تُرسل الرسالة: ' + e.message); }
-}
-
 /* ═══════════════════════════════════════════════════════════════════════
    واجهة المعلم / المشرف / الموظف: لوحة إدارة المسابقة (ملء الشاشة)
 ═══════════════════════════════════════════════════════════════════════ */
 const T = {el: null, tab: 'comps', comps: null, cid: null, comp: null, roster: null, defaults: null, today: null, lb: null,
-           G: {date: null, data: null, orig: {}, edits: {}, state: {}, focus: null}, P: {sid: '', cat: '', amt: '', reason: '', date: ''},
+           G: {date: null, data: null, orig: {}, edits: {}, state: {}, focus: null}, P: {sids: new Set(), cats: new Set(), amt: '', reason: '', date: '', q: ''},
            pts: null, outbox: [], flushing: false, timer: null, chat: {sid: null, name: '', rows: [], last: 0, pend: []}, rep: null, repMode: 'all', repWeek: 1, repSid: ''};
 const TABS = [['comps', '🏆 المسابقات'], ['board', '📊 الترتيب'], ['grid', '📝 التقييم'], ['pts', '➕ النقاط'], ['asg', '📋 الواجبات'], ['chat', '💬 المحادثات'], ['rep', '📈 التقارير']];
 const NEEDS_COMP = ['board', 'grid', 'pts', 'rep'];
@@ -561,11 +546,11 @@ CU.open = async function(tab){
   T.G = {date: null, data: null, orig: {}, edits: {}, state: {}, focus: null};
   syncBadge();
   const main = $('cuMain'); main.innerHTML = skel(4);
-  try { await tLoadComps(); } catch(e){ main.innerHTML = errBox(e.message, 'reload'); return; }
+  try { await tLoadComps(); } catch(e){ main.innerHTML = eb(e, 'reload'); return; }
   tGo(tab || 'comps');
-  flushOutbox();
+  flushOutbox(); notifyTick(true);
 };
-function tClose(){ if(T.el){ T.el.remove(); T.el = null; } clearInterval(T.timer); clearInterval(T.chatTimer); }
+function tClose(){ if(T.el){ T.el.remove(); T.el = null; } clearInterval(T.timer); clearInterval(T.chatTimer); chReset(); }
 async function tDefaults(){
   if(!T.defaults){ const r = await api('comp_defaults'); T.defaults = r; T.today = r.today; }
   return T.defaults;
@@ -607,18 +592,20 @@ function tNeedComp(){
   return false;
 }
 async function tGo(tab){
-  T.tab = tab; clearInterval(T.timer); clearInterval(T.chatTimer); tMarkTabs(); tCbar();
+  T.tab = tab; clearInterval(T.timer); clearInterval(T.chatTimer); chReset(); tMarkTabs(); tCbar();
   const main = $('cuMain'); if(!main) return; main.scrollTop = 0;
   if(NEEDS_COMP.includes(tab) && !tNeedComp()) return;
-  main.innerHTML = skel(4);
+  main.innerHTML = skel(4); LAST.stale = null;
   try {
     if(tab === 'comps') await tComps(); else if(tab === 'board') await tBoard(); else if(tab === 'grid') await tGrid();
     else if(tab === 'pts') await tPts(); else if(tab === 'asg') await tAsg(); else if(tab === 'chat') await tChatList(); else if(tab === 'rep') await tRep();
-  } catch(e){ main.innerHTML = errBox(e.message, 'reload'); }
+    if(LAST.stale && T.el && tab !== 'grid' && tab !== 'pts') main.insertAdjacentHTML('afterbegin', staleHtml());
+  } catch(e){ main.innerHTML = eb(e, 'reload'); }
 }
 
 const TH = {
   close: () => tClose(),
+  relogin: () => reLogin(),
   reload: async () => { T.roster = null; try { await tLoadComps(); } catch(e){ toast2('❌ ' + e.message); } tGo(T.tab); },
   tab: t => tGo(t.dataset.t),
   flush: () => { if(!online()) toast2('📴 لا يوجد اتصال'); else flushOutbox(true); },
@@ -637,7 +624,7 @@ const TH = {
   f_catdel: t => { F.cats.splice(Number(t.dataset.i), 1); fCats(); },
   f_catup: t => { const i = Number(t.dataset.i); if(i > 0){ [F.cats[i - 1], F.cats[i]] = [F.cats[i], F.cats[i - 1]]; fCats(); } },
   f_catdn: t => { const i = Number(t.dataset.i); if(i < F.cats.length - 1){ [F.cats[i + 1], F.cats[i]] = [F.cats[i], F.cats[i + 1]]; fCats(); } },
-  f_catreset: () => { F.cats = JSON.parse(JSON.stringify(T.defaults.categories)).map(c => ({...c, is_active: true})); fCats(); },
+  f_catreset: () => { F.cats = JSON.parse(JSON.stringify(T.defaults.categories)).map(c => ({...c, daily_max_points: null, is_active: true})); fCats(); },
   f_itemadd: () => { F.settings.bonus_items.push({name: '', points: 2}); fItems(); },
   f_itemdel: t => { F.settings.bonus_items.splice(Number(t.dataset.i), 1); fItems(); },
   /* التقييم اليومي */
@@ -645,10 +632,13 @@ const TH = {
   /* الترتيب */
   b_lvl: t => { T.bLvl = t.dataset.l || ''; tBoardRender(); }, b_hq: t => { T.bHq = t.dataset.h || ''; tBoardRender(); }, detail: t => tDetail(t.dataset.s),
   d_edit: t => entEdit(t.dataset.id, t.dataset.p, t.dataset.v), d_void: t => entVoid(t.dataset.id, false), d_restore: t => entVoid(t.dataset.id, true),
-  d_pts: t => { T.P.sid = t.dataset.s; t.closest('.cu-modal').remove(); tGo('pts'); }, d_print: t => repStudentPrint(t.dataset.s),
+  d_pts: t => { T.P.sids = new Set([t.dataset.s]); t.closest('.cu-modal').remove(); tGo('pts'); }, d_print: t => repStudentPrint(t.dataset.s),
   /* النقاط */
   p_amt: t => { T.P.amt = t.dataset.a; const i = $('pAmt'); if(i) i.value = T.P.amt; pMark(); }, p_item: t => { T.P.reason = t.dataset.n; T.P.amt = t.dataset.a; const r = $('pReason'); if(r) r.value = T.P.reason; const i = $('pAmt'); if(i) i.value = T.P.amt; pMark(); },
   p_reason: t => { T.P.reason = t.dataset.n; const r = $('pReason'); if(r) r.value = T.P.reason; }, p_apply: () => pApply(), p_audit: () => auditView(),
+  p_cat: t => { const id = t.dataset.c; T.P.cats.has(id) ? T.P.cats.delete(id) : T.P.cats.add(id); t.classList.toggle('on'); pChips(); pSum(); },
+  p_all: () => { T.pts.rows.forEach(r => T.P.sids.add(r.student_id)); pStuList(); pSum(); pRecent(); },
+  p_none: () => { T.P.sids.clear(); pStuList(); pSum(); pRecent(); },
   p_more: () => auditView(true),
   /* الواجبات */
   a_new: () => aForm(null), a_edit: t => aForm(t.dataset.id), a_res: t => aResults(t.dataset.id), a_stat: t => aStatus(t.dataset.id, t.dataset.s), a_del: t => aDelete(t.dataset.id),
@@ -658,7 +648,6 @@ const TH = {
   a_save: t => aSave(t.closest('.cu-modal'), false), a_pub: t => aSave(t.closest('.cu-modal'), true), a_sub: t => aSubmission(t.dataset.id, t.dataset.s), a_grade: t => aGrade(t.dataset.id, t.dataset.s),
   a_stud: t => { const m = t.closest('.cu-modal'); const on = t.value === 'sel'; m.querySelector('#aStuBox').style.display = on ? 'block' : 'none'; },
   /* المحادثات */
-  c_open: t => tChatOpen(t.dataset.s, t.dataset.n), c_new: () => tChatNew(), c_back: () => tGo('chat'), c_send: () => tChatSend(), c_retry: t => tChatSend(t.dataset.id),
   /* التقارير */
   r_mode: t => { T.repMode = t.dataset.m; tRepRender(); }, r_print: () => repPrint(), r_csv: () => repCsv()
 };
@@ -714,7 +703,7 @@ async function tForm(id){
     const hqs = comp ? comp.halaqa_ids.map(String) : (own.length ? own : (ro.halaqat.length === 1 ? [String(ro.halaqat[0].id)] : []));
     F = {id: id || null, expected: comp ? comp.updated_at : null, name: comp ? comp.name : '', desc: comp ? comp.description : '', start: comp ? String(comp.start_date).slice(0, 10) : dfl.today,
          end: comp ? String(comp.end_date).slice(0, 10) : addDays(dfl.today, 29), halaqas: new Set(hqs), parts: new Map(), status: comp ? comp.status : 'draft',
-         cats: cats ? cats.map(c => ({id: c.id, key: c.key, name: c.name, weekly_max_points: c.weekly_max_points, kind: c.kind, is_active: c.is_active})) : JSON.parse(JSON.stringify(dfl.categories)).map(c => ({...c, is_active: true})),
+         cats: cats ? cats.map(c => ({id: c.id, key: c.key, name: c.name, weekly_max_points: c.weekly_max_points, daily_max_points: c.daily_max_points == null ? null : c.daily_max_points, kind: c.kind, is_active: c.is_active})) : JSON.parse(JSON.stringify(dfl.categories)).map(c => ({...c, is_active: true})),
          settings: {show_ranking: s0.show_ranking !== false, levels: s0.levels !== false, bonus_weekly_cap: s0.bonus_weekly_cap, tz: s0.tz, bonus_items: JSON.parse(JSON.stringify(s0.bonus_items || []))}};
     parts.filter(p => p.status === 'active').forEach(p => F.parts.set(p.student_id, {level: p.level || 'متوسط', note: p.target_note || ''}));
     if(!id && F.halaqas.size) (ro.students || []).filter(s => F.halaqas.has(String(s.halaqa_id))).forEach(s => F.parts.set(s.id, {level: 'متوسط', note: ''}));
@@ -732,7 +721,7 @@ function fRender(m){
       <div class="cu-chips"><span class="cu-mut" style="align-self:center">المدة:</span>${[14, 30, 60].map(n => `<button class="cu-pill" data-act="f_dur" data-n="${n}">${AD(n)} يوماً</button>`).join('')}<span class="cu-mut" id="fDays" style="align-self:center"></span></div></div>
     <div class="cu-card"><div class="cu-h">النطاق: الحلقات المشمولة</div><div id="fHq"></div></div>
     <div class="cu-card"><div class="cu-h">الطلاب المشاركون <span class="cu-mut" id="fPc"></span></div><div id="fParts"></div></div>
-    <div class="cu-card"><div class="cu-h">شبكة التقييم (المجالات)</div><div class="cu-mut" style="margin-bottom:8px">أضف مجالاً أو عدّل اسمه ونقاطه الأسبوعية القصوى؛ المجموع الافتراضي ١٠٠ نقطة أسبوعياً.</div><div id="fCats"></div></div>
+    <div class="cu-card"><div class="cu-h">شبكة التقييم (المجالات)</div><div class="cu-mut" style="margin-bottom:8px">لكل مجال: الاسم، ثم <b>الحد الأسبوعي</b>، ثم <b>الحد اليومي</b> (إن تركته فارغاً يُحسب تلقائياً = الأسبوعي ÷ ٥). المجموع الأسبوعي الافتراضي ١٠٠ نقطة.</div><div id="fCats"></div></div>
     <div class="cu-card"><div class="cu-h">الإعدادات</div>
       <label class="cu-row" style="margin-bottom:8px"><input type="checkbox" data-s="show_ranking" ${F.settings.show_ranking ? 'checked' : ''}> <span style="font-size:12.5px;font-weight:700">إظهار الترتيب الحي للطلاب (النتائج النهائية تظهر دائماً بعد الانتهاء)</span></label>
       <label class="cu-row" style="margin-bottom:8px"><input type="checkbox" data-s="levels" ${F.settings.levels ? 'checked' : ''}> <span style="font-size:12.5px;font-weight:700">تفعيل مستويات الطلاب (مبتدئ / متوسط / متقدم) للمقارنة العادلة</span></label>
@@ -766,7 +755,8 @@ function fCats(){
   const core = F.cats.filter(c => c.kind === 'core' && c.is_active).reduce((a, c) => a + Number(c.weekly_max_points || 0), 0);
   box.innerHTML = F.cats.map((c, i) => `<div class="cu-row" style="padding:6px 0;border-bottom:1px solid var(--bd);${c.is_active ? '' : 'opacity:.5'}">
       <input class="cu-in" style="flex:1;padding:8px" data-cn="${i}" value="${E(c.name)}" placeholder="اسم المجال" maxlength="60">
-      <input class="cu-in" style="width:68px;padding:8px;text-align:center" type="number" min="0" step="0.5" data-cm="${i}" value="${c.weekly_max_points}">
+      <input class="cu-in" style="width:62px;padding:8px;text-align:center" type="number" min="0" step="0.5" data-cm="${i}" value="${c.weekly_max_points}" title="الحد الأسبوعي">
+      <input class="cu-in" style="width:62px;padding:8px;text-align:center" type="number" min="0" step="0.5" data-cd="${i}" value="${c.daily_max_points == null ? '' : c.daily_max_points}" placeholder="${NF(Number(c.weekly_max_points || 0) / 5)}" title="الحد اليومي (فارغ = الأسبوعي ÷ ٥)">
       <div style="display:flex;flex-direction:column;gap:2px"><button class="cu-pill" style="padding:1px 7px" data-act="f_catup" data-i="${i}">▲</button><button class="cu-pill" style="padding:1px 7px" data-act="f_catdn" data-i="${i}">▼</button></div>
       <button class="cu-btn red sm" data-act="f_catdel" data-i="${i}">✕</button></div>${c.kind === 'bonus' ? '<div class="cu-mut" style="font-size:10px">⭐ مجال مكافآت (يُستخدم من لوحة النقاط)</div>' : ''}`).join('')
     + `<div class="cu-row wrap" style="margin-top:10px"><button class="cu-btn sec sm" data-act="f_catadd">＋ إضافة مجال</button><button class="cu-btn sec sm" data-act="f_catreset">↺ الافتراضي</button><span class="cu-mut">المجموع الأسبوعي: <b style="color:var(--ink)">${NF(core)}</b></span></div>`;
@@ -787,13 +777,14 @@ function fInput(e){
   else if(t.dataset.pn){ const p = F.parts.get(t.dataset.pn); if(p) p.note = t.value; }
   else if(t.dataset.cn != null){ F.cats[Number(t.dataset.cn)].name = t.value; }
   else if(t.dataset.cm != null){ F.cats[Number(t.dataset.cm)].weekly_max_points = t.value; if(e.type === 'change') fCats(); }
+  else if(t.dataset.cd != null){ F.cats[Number(t.dataset.cd)].daily_max_points = t.value === '' ? null : t.value; }
   else if(t.dataset.in != null){ F.settings.bonus_items[Number(t.dataset.in)].name = t.value; }
   else if(t.dataset.ip != null){ F.settings.bonus_items[Number(t.dataset.ip)].points = t.value; }
 }
 function fPayload(){
   return {id: F.id || undefined, expected_updated_at: F.expected || undefined, name: F.name.trim(), description: F.desc.trim(), start_date: F.start, end_date: F.end, halaqa_ids: [...F.halaqas],
     settings: {show_ranking: !!F.settings.show_ranking, levels: !!F.settings.levels, bonus_weekly_cap: Number(F.settings.bonus_weekly_cap) || 0, bonus_items: F.settings.bonus_items.filter(x => String(x.name).trim()).map(x => ({name: String(x.name).trim(), points: Number(x.points) || 0}))},
-    categories: F.cats.map(c => ({id: c.id, key: c.key, name: String(c.name).trim(), weekly_max_points: Number(c.weekly_max_points), kind: c.kind, is_active: c.is_active})),
+    categories: F.cats.map(c => ({id: c.id, key: c.key, name: String(c.name).trim(), weekly_max_points: Number(c.weekly_max_points), daily_max_points: (c.daily_max_points === '' || c.daily_max_points == null) ? null : Number(c.daily_max_points), kind: c.kind, is_active: c.is_active})),
     participants: [...F.parts.entries()].map(([sid, p]) => ({student_id: sid, level: p.level, target_note: p.note}))};
 }
 function fCheck(){
@@ -803,6 +794,7 @@ function fCheck(){
   if(!p.halaqa_ids.length) return 'اختر حلقة واحدة على الأقل';
   if(p.categories.some(c => !c.name || isNaN(c.weekly_max_points) || c.weekly_max_points < 0)) return 'أكمل أسماء المجالات ونقاطها';
   if(new Set(p.categories.map(c => c.name)).size !== p.categories.length) return 'يوجد مجالان بالاسم نفسه';
+  if(p.categories.some(c => c.daily_max_points != null && (isNaN(c.daily_max_points) || c.daily_max_points < 0 || c.daily_max_points > c.weekly_max_points))) return 'الحد اليومي لا يجوز أن يتجاوز الحد الأسبوعي';
   if(!p.categories.some(c => c.kind === 'core')) return 'يلزم مجال تقييم واحد على الأقل';
   return '';
 }
@@ -840,8 +832,8 @@ function tInput(e){
   if(t.dataset && t.dataset.g){ gInput(t); return; }
   if(t.id === 'pAmt'){ T.P.amt = t.value; pMark(); }
   else if(t.id === 'pReason') T.P.reason = t.value;
-  else if(t.id === 'pStu' && e.type === 'change'){ T.P.sid = t.value; pRecent(); }
-  else if(t.id === 'pCat' && e.type === 'change'){ T.P.cat = t.value; pChips(); }
+  else if(t.dataset && t.dataset.ps != null){ t.checked ? T.P.sids.add(t.dataset.ps) : T.P.sids.delete(t.dataset.ps); pSum(); pRecent(); }
+  else if(t.id === 'pSearch'){ T.P.q = t.value; pStuList(); }
   else if(t.id === 'pDate') T.P.date = t.value;
   else if(t.id === 'gDate' && e.type === 'change'){ gDateChange(t.value); }
   else if(t.id === 'rSel' && e.type === 'change'){ T.repSid = t.value; tRepRender(); }
@@ -921,13 +913,29 @@ async function tAfterChange(){
   if(T.tab === 'pts') pRecent();
 }
 
-/* ───── الشبكة: التقييم اليومي لعدة طلاب دفعة واحدة ───── */
+/* ───── الشبكة: التقييم اليومي لعدة طلاب دفعة واحدة (يعمل دون إنترنت) ───── */
 const gk = (s, c) => s + '|' + c;
+const DAYN = d => { try { return new Date(String(d).slice(0, 10) + 'T12:00:00').toLocaleDateString('ar', {weekday: 'long'}); } catch(e){ return ''; } };
+/* جلب الشبكة: من السيرفر، أو من النسخة المحفوظة، أو بناؤها من بيانات المسابقة المحفوظة عند انقطاع الإنترنت */
+async function gFetch(date){
+  try { return await api('comp_grid', {p_comp: T.cid, p_date: date || null}); }
+  catch(e){
+    if(!e.net || !T.comp) throw e;
+    const c = T.comp.competition, today = ymd(new Date()), st = String(c.start_date).slice(0, 10), en = String(c.end_date).slice(0, 10);
+    const d = date || (today < st ? st : today > en ? en : today);
+    const wk = Math.floor((new Date(d + 'T12:00:00') - new Date(st + 'T12:00:00')) / 864e5 / 7) + 1;
+    const cats = (T.comp.categories || []).filter(x => x.is_active && x.kind === 'core').map(x => ({id: x.id, key: x.key, name: x.name, weekly_max: x.weekly_max_points, daily_max: x.daily_max != null ? x.daily_max : Math.round(x.weekly_max_points / 5 * 100) / 100}));
+    const own = role() === 'teacher' ? String(_currentUser.halaqa_id) : null;
+    const rows = (T.comp.participants || []).filter(p => p.status === 'active' && (!own || String(p.halaqa_id) === own)).map(p => ({student_id: p.student_id, name: p.name, halaqa_id: p.halaqa_id, level: p.level, cells: {}}));
+    const state = c.status === 'active' ? (today < st ? 'upcoming' : today > en ? 'ended' : 'running') : (c.status === 'ended' ? 'ended' : c.state);
+    return {ok: true, date: d, week: wk, today, state, status: c.status, start_date: st, end_date: en, categories: cats, rows, _offline: true};
+  }
+}
 async function tGrid(){ T.G.edits = {}; T.G.state = {}; await gLoad(); }
 async function gLoad(keep){
   const G = T.G;
-  const r = await api('comp_grid', {p_comp: T.cid, p_date: G.date || null});
-  G.date = String(r.date).slice(0, 10); G.data = r; G.orig = {};
+  const r = await gFetch(G.date);
+  G.date = String(r.date).slice(0, 10); G.data = r; G.orig = {}; G.off = !!(r._offline || r._cached);
   r.rows.forEach(row => r.categories.forEach(cat => { const cell = row.cells[cat.id] || {}; G.orig[gk(row.student_id, cat.id)] = {v: cell.points == null ? '' : String(Number(cell.points)), ver: cell.ver || null, used: Number(cell.used || 0), pts: Number(cell.points || 0)}; }));
   if(!keep){ G.edits = {}; G.state = {}; }
   /* ما لم يُزامَن بعد (من انقطاع سابق) يظهر بعلامة ⏳ */
@@ -936,18 +944,21 @@ async function gLoad(keep){
   gRender();
 }
 function gEditable(){ const d = T.G.data; return d && d.state === 'running' && d.status === 'active' && T.G.date <= d.today; }
+const dailyOf = cat => Number(cat.daily_max != null ? cat.daily_max : Math.round(cat.weekly_max / 5 * 100) / 100);
 function gRem(k, cat){ const o = T.G.orig[k]; return Math.max(0, Number(cat.weekly_max) - (o.used - o.pts)); }
+function gLim(k, cat){ return Math.min(dailyOf(cat), gRem(k, cat)); }
 function gRender(){
   const main = $('cuMain'); const G = T.G; if(!main || T.tab !== 'grid' || !G.data) return;
   const d = G.data, ed = gEditable();
-  let h = `<div class="cu-card" style="padding:10px"><div class="cu-row"><button class="cu-btn sec sm" data-act="g_next">→</button><input class="cu-in" type="date" id="gDate" value="${G.date}" min="${String(d.start_date).slice(0, 10)}" max="${String(d.end_date).slice(0, 10) < d.today ? String(d.end_date).slice(0, 10) : d.today}" style="text-align:center"><button class="cu-btn sec sm" data-act="g_prev">←</button></div>
-    <div class="cu-mut" style="text-align:center;margin-top:6px">الأسبوع ${AD(d.week)} · أدخل درجات اليوم لكل طالب ثم اضغط حفظ — يُحفظ ما تغيّر فقط.</div></div>`;
+  let h = (G.off ? staleHtml() || '<div class="cu-warn">📴 تعمل دون اتصال: ما تحفظه يُخزَّن على جهازك بعلامة ⏳ ويُرفع تلقائياً عند عودة الإنترنت. الحد الأسبوعي يُتحقق منه نهائياً عند الرفع.</div>' : '')
+    + `<div class="cu-card" style="padding:10px"><div class="cu-row"><button class="cu-btn sec sm" data-act="g_next">→</button><input class="cu-in" type="date" id="gDate" value="${G.date}" min="${String(d.start_date).slice(0, 10)}" max="${String(d.end_date).slice(0, 10) < d.today ? String(d.end_date).slice(0, 10) : d.today}" style="text-align:center;flex:1"><span class="cu-st green" style="font-size:12.5px;padding:8px 13px">${DAYN(G.date)}</span><button class="cu-btn sec sm" data-act="g_prev">←</button></div>
+    <div class="cu-mut" style="text-align:center;margin-top:6px">الأسبوع ${AD(d.week)} · الرقم الباهت داخل الخانة = <b>الحد اليومي</b>، وتحتها مجموع الأسبوع من <b>الحد الأسبوعي</b>. يُحفظ ما تغيّر فقط.</div></div>`;
   if(!ed) h += `<div class="cu-warn">${d.state === 'ended' ? '🏁 المسابقة منتهية — لا يمكن تعديل التقييم اليومي (التصحيح من لوحة النقاط بسبب موثق للمشرف).' : d.status !== 'active' ? '⏸ المسابقة غير منشورة أو متوقفة — فعّلها من تبويب المسابقات للتقييم.' : d.state === 'upcoming' ? '🚀 المسابقة لم تبدأ بعد.' : 'لا يمكن التقييم في تاريخ مستقبلي.'}</div>`;
   if(!d.rows.length) { main.innerHTML = h + emptyBox('👥', 'لا يوجد طلاب في نطاق تقييمك', 'المشاركون في هذه المسابقة ليسوا من حلقتك.'); return; }
-  h += `<div class="cu-card" style="padding:6px"><div class="cu-scroll"><table class="cu-g"><tr><th class="nm">الطالب</th>${d.categories.map(c => `<th>${E(c.name)}<br><span style="font-weight:600">حتى ${NF(c.weekly_max)}/أسبوع</span>${ed ? `<br><a href="#" data-act="g_col" data-c="${c.id}" style="color:var(--g);font-size:10px">ملء الكل</a>` : ''}</th>`).join('')}</tr>
+  h += `<div class="cu-card" style="padding:6px"><div class="cu-scroll"><table class="cu-g"><tr><th class="nm">الطالب</th>${d.categories.map(c => `<th>${E(c.name)}<br><span style="font-weight:600">يومي ${NF(dailyOf(c))} · أسبوعي ${NF(c.weekly_max)}</span>${ed ? `<br><a href="#" data-act="g_col" data-c="${c.id}" style="color:var(--g);font-size:10px">ملء الكل</a>` : ''}</th>`).join('')}</tr>
     ${d.rows.map(row => `<tr><td class="nm">${E(row.name)}</td>${d.categories.map(c => { const k = gk(row.student_id, c.id), o = G.orig[k], ev = G.edits[k], val = ev !== undefined ? ev : o.v;
       const cls = (ev !== undefined && ev !== o.v ? 'dirty ' : '') + (G.state[k] || '');
-      return `<td><input data-g="${k}" inputmode="decimal" autocomplete="off" class="${cls}" value="${E(val)}" placeholder="${NF(gRem(k, c))}" ${ed ? '' : 'disabled'} title="المتبقي هذا الأسبوع: ${NF(gRem(k, c))}"><span class="rem">${o.used ? 'الأسبوع: ' + NF(o.used) : ''}</span></td>`; }).join('')}</tr>`).join('')}</table></div></div>`;
+      return `<td><input data-g="${k}" inputmode="decimal" autocomplete="off" class="${cls}" value="${E(val)}" placeholder="${NF(dailyOf(c))}" ${ed ? '' : 'disabled'} title="المتاح اليوم: ${NF(gLim(k, c))}"><span class="rem">أسبوعي ${NF(o.used - o.pts + (val !== '' ? Number(val) || 0 : 0))}/${NF(c.weekly_max)}</span></td>`; }).join('')}</tr>`).join('')}</table></div></div>`;
   h += `<div class="cu-bar2"><div class="cu-qk">${['+1', '+2', '+5', '+10', 'max', 'clear'].map(q => `<button class="cu-pill" data-act="g_q" data-q="${q}">${q === 'max' ? 'الحد' : q === 'clear' ? 'مسح' : q}</button>`).join('')}</div>
     <button class="cu-btn full" data-act="g_save" id="gSaveBtn" ${ed ? '' : 'disabled'}>💾 حفظ التقييم</button></div>`;
   main.innerHTML = h; gCount();
@@ -960,25 +971,27 @@ function gInput(t){
   const cat = gCat(k.split('|')[1]); const raw = t.value.replace(/[٠-٩]/g, x => '٠١٢٣٤٥٦٧٨٩'.indexOf(x)).replace('٫', '.').replace(/[^\d.]/g, '');
   if(raw !== t.value) t.value = raw;
   G.edits[k] = raw; delete G.state[k];
-  const n = Number(raw), bad = raw !== '' && (isNaN(n) || n < 0 || n > gRem(k, cat) + 1e-9);
+  const n = Number(raw), lim = gLim(k, cat), bad = raw !== '' && (isNaN(n) || n < 0 || n > lim + 1e-9);
   t.classList.toggle('bad', bad); t.classList.remove('ok', 'pend'); t.classList.toggle('dirty', raw !== G.orig[k].v && !bad);
-  t.title = bad ? 'أكبر من المتبقي هذا الأسبوع (' + NF(gRem(k, cat)) + ')' : ''; gCount();
+  t.title = bad ? (n > dailyOf(cat) + 1e-9 ? 'أكبر من الحد اليومي (' + NF(dailyOf(cat)) + ')' : 'أكبر من المتبقي هذا الأسبوع (' + NF(gRem(k, cat)) + ')') : '';
+  const sp = t.nextElementSibling; if(sp && sp.classList.contains('rem')) sp.textContent = 'أسبوعي ' + NF(G.orig[k].used - G.orig[k].pts + (isNaN(n) ? 0 : n)) + '/' + NF(cat.weekly_max);
+  gCount();
 }
 function gQuick(q){
   const G = T.G; if(!G.focus){ toast2('اضغط على خانة أولاً ثم اختر القيمة'); return; }
   const k = G.focus, inp = T.el.querySelector('[data-g="' + k + '"]'); if(!inp || inp.disabled) return;
-  const cat = gCat(k.split('|')[1]), rem = gRem(k, cat), cur = Number(G.edits[k] !== undefined ? G.edits[k] : G.orig[k].v) || 0;
-  let v = q === 'max' ? rem : q === 'clear' ? '' : Math.min(rem, cur + Number(q.slice(1)));
+  const cat = gCat(k.split('|')[1]), lim = gLim(k, cat), cur = Number(G.edits[k] !== undefined ? G.edits[k] : G.orig[k].v) || 0;
+  let v = q === 'max' ? lim : q === 'clear' ? '' : Math.min(lim, cur + Number(q.slice(1)));
   inp.value = v === '' ? '' : String(Math.round(v * 100) / 100); gInput(inp);
 }
 async function gColFill(cid){
-  const cat = gCat(cid); const v = await formModal('ملء «' + cat.name + '» لكل الطلاب', [{k: 'v', label: 'القيمة (تُقصّ تلقائياً عند الحد الأسبوعي لكل طالب)', type: 'number', step: '0.5', min: 0, required: true}]);
+  const cat = gCat(cid); const v = await formModal('ملء «' + cat.name + '» لكل الطلاب', [{k: 'v', label: 'القيمة (تُقصّ تلقائياً عند الحد اليومي/الأسبوعي لكل طالب)', type: 'number', step: '0.5', min: 0, required: true}]);
   if(!v) return; const n = Number(v.v); if(isNaN(n) || n < 0){ toast2('قيمة غير صالحة'); return; }
-  T.G.data.rows.forEach(r => { const k = gk(r.student_id, cid); T.G.edits[k] = String(Math.min(n, gRem(k, cat))); delete T.G.state[k]; }); gRender();
+  T.G.data.rows.forEach(r => { const k = gk(r.student_id, cid); T.G.edits[k] = String(Math.min(n, gLim(k, cat))); delete T.G.state[k]; }); gRender();
 }
 function gDateChange(d){
   if(gDirtyKeys().length && !confirm('لديك تغييرات غير محفوظة. هل تريد تجاهلها؟')){ const i = $('gDate'); if(i) i.value = T.G.date; return; }
-  T.G.date = d; T.G.edits = {}; T.G.state = {}; $('cuMain').innerHTML = skel(3); gLoad().catch(e => { $('cuMain').innerHTML = errBox(e.message, 'reload'); });
+  T.G.date = d; T.G.edits = {}; T.G.state = {}; $('cuMain').innerHTML = skel(3); gLoad().catch(e => { $('cuMain').innerHTML = eb(e, 'reload'); });
 }
 function gShift(n){
   const d = T.G.data; const nd = addDays(T.G.date, n);
@@ -990,21 +1003,21 @@ async function gSave(){
   if(!keys.length){ toast2('لا توجد تغييرات للحفظ'); return; }
   const items = []; let badN = 0;
   keys.forEach(k => { const [sid, cid] = k.split('|'), raw = G.edits[k], cat = gCat(cid), n = Number(raw);
-    if(raw !== '' && (isNaN(n) || n < 0 || n > gRem(k, cat) + 1e-9)){ G.state[k] = 'bad'; badN++; return; }
+    if(raw !== '' && (isNaN(n) || n < 0 || n > gLim(k, cat) + 1e-9)){ G.state[k] = 'bad'; badN++; return; }
     const it = {student_id: sid, category_id: cid, points: raw === '' ? null : n}; if(G.orig[k].ver) it.ver = G.orig[k].ver; items.push(it); });
-  if(badN){ toast2('⚠️ ' + AD(badN) + ' خانة تتجاوز الحد الأسبوعي — صحّحها أولاً'); gRender(); return; }
+  if(badN){ toast2('⚠️ ' + AD(badN) + ' خانة تتجاوز الحد اليومي أو الأسبوعي — صحّحها أولاً'); gRender(); return; }
   const op = UID(), btn = $('gSaveBtn'); if(btn) btn.disabled = true;
   try {
     const r = await api('comp_eval_save', {p_comp: T.cid, p_date: G.date, p_items: items, p_op: op});
     const bad = (r.results || []).filter(x => !['saved', 'same', 'cleared', 'noop'].includes(x.status));
     keys.forEach(k => { delete G.edits[k]; delete G.state[k]; });
     bad.forEach(x => { const k = gk(x.student_id, x.category_id); const raw = items.find(i => i.student_id === x.student_id && i.category_id === x.category_id); G.edits[k] = raw && raw.points != null ? String(raw.points) : ''; G.state[k] = 'bad'; });
-    const msgs = {cap: 'تجاوز الحد الأسبوعي', conflict: 'عُدّل من جهاز آخر — حُدّثت القيمة', not_participant: 'ليس مشاركاً', forbidden: 'ليس من نطاق صلاحيتك', bad_points: 'قيمة غير صالحة', duplicate: 'تقييم مكرر', bad_category: 'مجال غير صالح'};
+    const msgs = {cap: 'تجاوز الحد الأسبوعي', daily_cap: 'تجاوز الحد اليومي', conflict: 'عُدّل من جهاز آخر — حُدّثت القيمة', not_participant: 'ليس مشاركاً', forbidden: 'ليس من نطاق صلاحيتك', bad_points: 'قيمة غير صالحة', duplicate: 'تقييم مكرر', bad_category: 'مجال غير صالح'};
     toast2(bad.length ? '⚠️ حُفظ ' + AD(r.saved) + ' وتعذّر ' + AD(bad.length) + ': ' + (msgs[bad[0].status] || bad[0].status) : '✅ تم حفظ ' + AD(r.saved) + ' تقييماً');
     await gLoad(true); T.lb = null;
   } catch(e){
     if(e.net){ T.outbox.push({id: op, uid: myId(), type: 'eval', comp: T.cid, date: G.date, items, op, at: Date.now()}); obSave();
-      keys.forEach(k => { G.state[k] = 'pend'; }); toast2('📴 لا يوجد اتصال — حُفظ التقييم مؤقتاً على الجهاز ولم يُزامن بعد (⏳)'); gRender(); }
+      keys.forEach(k => { G.state[k] = 'pend'; }); toast2('📴 لا يوجد اتصال — حُفظ التقييم على جهازك ⏳ وسيُرفع تلقائياً عند عودة الإنترنت'); gRender(); }
     else { toast2('❌ ' + e.message); if(btn) btn.disabled = false; }
   }
 }
@@ -1021,11 +1034,13 @@ async function flushOutbox(manual){
       try {
         if(it.type === 'eval') r = await _rpcT('comp_eval_save', {p_comp: it.comp, p_date: it.date, p_items: it.items, p_op: it.op}, true);
         else if(it.type === 'adjust') r = await _rpcT('comp_adjust', {p_comp: it.comp, p_student: it.student, p_category: it.category, p_points: it.points, p_reason: it.reason, p_date: it.date || null, p_op: it.op}, true);
+        else if(it.type === 'adjust_many') r = await _rpcT('comp_adjust_many', {p_comp: it.comp, p_students: it.students, p_categories: it.categories, p_points: it.points, p_reason: it.reason, p_date: it.date || null, p_op: it.op}, true);
         else r = {ok: true};
       } catch(e){ break; }
       if(r && r.ok === false && r.error === 'auth') break;
       T.outbox = T.outbox.filter(x => x.id !== it.id); obSave();
-      if(r && r.ok === false) dropped.push(errMsg(r)); else ok++;
+      if(r && r.ok === false) dropped.push(errMsg(r));
+      else { ok++; const badItems = (r && r.results || []).filter(x => !['saved', 'same', 'cleared', 'noop'].includes(x.status)); if(badItems.length) dropped.push(AD(badItems.length) + ' عنصر رُفض عند المزامنة (' + (ST_AR[badItems[0].status] || badItems[0].status) + ')'); }
     }
   } finally { T.flushing = false; syncBadge(); }
   if(ok) toast2('✅ تمت مزامنة ' + AD(ok) + ' عملية معلّقة');
@@ -1035,61 +1050,87 @@ async function flushOutbox(manual){
 window.addEventListener('online', () => { syncBadge(); setTimeout(() => { if(typeof _currentUser !== 'undefined' && _currentUser && canComp()) flushOutbox(); }, 1200); });
 window.addEventListener('offline', syncBadge);
 
-/* ───── لوحة النقاط: إضافة/خصم + سجل العمليات ───── */
+/* ───── لوحة النقاط: إضافة/خصم لعدة طلاب ومجالات + سجل العمليات ───── */
 const QUICK_REASONS = ['أداء متميز', 'التزام وانضباط', 'مخالفة سلوكية', 'تصحيح خطأ سابق', 'مبادرة طيبة'];
 async function tPts(){
-  const g = await api('comp_grid', {p_comp: T.cid, p_date: null});
+  const g = await gFetch(null);
   const cats = (T.comp.categories || []).filter(c => c.is_active);
-  T.pts = {rows: g.rows, cats, state: g.state, status: g.status, today: g.today, start: String(g.start_date).slice(0, 10), end: String(g.end_date).slice(0, 10)};
+  T.pts = {rows: g.rows, cats, state: g.state, status: g.status, today: g.today, start: String(g.start_date).slice(0, 10), end: String(g.end_date).slice(0, 10), off: !!(g._offline || g._cached)};
   const P = T.P;
-  if(!g.rows.find(r => r.student_id === P.sid)) P.sid = g.rows[0] ? g.rows[0].student_id : '';
-  if(!cats.find(c => c.id === P.cat)) P.cat = cats[0] ? cats[0].id : '';
-  pRender(); if(P.sid) pRecent();
+  P.sids = new Set([...P.sids].filter(s => g.rows.some(r => r.student_id === s)));
+  P.cats = new Set([...P.cats].filter(c => cats.some(x => x.id === c)));
+  pRender(); pRecent();
+}
+function pStuList(){
+  const box = $('pStuList'); if(!box) return; const q = (T.P.q || '').trim();
+  const rows = T.pts.rows.filter(r => !q || r.name.includes(q));
+  box.innerHTML = rows.map(r => `<label class="cu-row" style="padding:7px 4px;border-bottom:1px solid var(--bd);cursor:pointer"><input type="checkbox" data-ps="${E(r.student_id)}" ${T.P.sids.has(r.student_id) ? 'checked' : ''}><span style="font-size:13px;font-weight:700">${E(r.name)}</span></label>`).join('') || '<div class="cu-mut" style="padding:8px">لا نتائج.</div>';
+}
+function pSum(){
+  const a = $('pSc'), b = $('pSummary'); const ns = T.P.sids.size, nc = T.P.cats.size;
+  if(a) a.textContent = AD(ns);
+  if(b) b.innerHTML = ns && nc ? `سيُطبَّق على <b>${AD(ns)}</b> طالب × <b>${AD(nc)}</b> مجال = <b>${AD(ns * nc)}</b> عملية، لكل عملية السبب نفسه.` : 'اختر طالباً واحداً أو أكثر ومجالاً واحداً أو أكثر.';
+}
+function pendHtml(){
+  const list = T.outbox.filter(x => x.uid === myId() && x.comp === T.cid && x.type === 'adjust_many');
+  if(!list.length) return '';
+  return `<div class="cu-warn">⏳ ${AD(list.length)} عملية نقاط معلّقة لم تُزامن بعد — تُرفع تلقائياً عند عودة الإنترنت:<br>${list.map(x => '• ' + SG(x.points) + ' لـ ' + AD(x.students.length) + ' طالب × ' + AD(x.categories.length) + ' مجال — ' + E(x.reason)).join('<br>')}</div>`;
 }
 function pRender(){
   const main = $('cuMain'); const p = T.pts, P = T.P; if(!main || T.tab !== 'pts' || !p) return;
   if(!p.rows.length){ main.innerHTML = emptyBox('👥', 'لا يوجد طلاب في نطاق صلاحيتك', 'المشاركون في هذه المسابقة ليسوا من حلقتك.'); return; }
   const warn = p.state === 'ended' ? (role() === 'teacher' ? '🏁 المسابقة منتهية ومقفلة — التصحيح بعد الإغلاق للمشرف فقط.' : '🏁 المسابقة منتهية — أي تعديل يُسجَّل «بعد الإغلاق» وبسبب موثق.')
     : p.status !== 'active' ? '⏸ المسابقة غير منشورة أو متوقفة — لا يمكن تسجيل نقاط الآن.' : '';
-  main.innerHTML = `${warn ? `<div class="cu-warn">${warn}</div>` : ''}<div class="cu-card"><div class="cu-h"><span class="dot"></span>إضافة أو خصم نقاط</div>
-    <label class="cu-lbl">الطالب</label><select class="cu-sel" id="pStu">${p.rows.map(r => `<option value="${E(r.student_id)}" ${r.student_id === P.sid ? 'selected' : ''}>${E(r.name)}</option>`).join('')}</select>
-    <label class="cu-lbl">مجال التقييم</label><select class="cu-sel" id="pCat">${p.cats.map(c => `<option value="${c.id}" ${c.id === P.cat ? 'selected' : ''}>${c.kind === 'bonus' ? '⭐ ' : ''}${E(c.name)}</option>`).join('')}</select>
-    <label class="cu-lbl">القيمة</label><div class="cu-chips" style="margin-top:0">${['1', '2', '5', '10'].map(a => `<button class="cu-pill" data-act="p_amt" data-a="${a}">+${AD(a)}</button>`).join('')}${['-1', '-2', '-5'].map(a => `<button class="cu-pill neg" data-act="p_amt" data-a="${a}">−${AD(a.slice(1))}</button>`).join('')}</div>
+  main.innerHTML = `${p.off ? (staleHtml() || '<div class="cu-warn">📴 دون اتصال — ما تضيفه يُحفظ على جهازك ويُرفع عند عودة الإنترنت.</div>') : ''}${warn ? `<div class="cu-warn">${warn}</div>` : ''}${pendHtml()}
+    <div class="cu-card"><div class="cu-h"><span class="dot"></span>إضافة أو خصم نقاط</div>
+    <label class="cu-lbl">الطلاب — <b id="pSc">${AD(P.sids.size)}</b> محدد</label>
+    <div class="cu-row"><input class="cu-in" id="pSearch" placeholder="🔎 بحث عن طالب" value="${E(P.q || '')}"><button class="cu-btn sec sm" data-act="p_all">الكل</button><button class="cu-btn sec sm" data-act="p_none">مسح</button></div>
+    <div id="pStuList" style="max-height:220px;overflow-y:auto;border:1px solid var(--bd);border-radius:12px;padding:2px 8px;margin-top:8px"></div>
+    <label class="cu-lbl">مجالات التقييم — اختر واحداً أو أكثر</label>
+    <div class="cu-chips" style="margin-top:0">${p.cats.map(c => `<button class="cu-pill ${P.cats.has(c.id) ? 'on' : ''}" data-act="p_cat" data-c="${c.id}">${c.kind === 'bonus' ? '⭐ ' : ''}${E(c.name)}</button>`).join('')}</div>
+    <label class="cu-lbl">القيمة (لكل عملية)</label><div class="cu-chips" style="margin-top:0">${['1', '2', '5', '10'].map(a => `<button class="cu-pill" data-act="p_amt" data-a="${a}">+${AD(a)}</button>`).join('')}${['-1', '-2', '-5'].map(a => `<button class="cu-pill neg" data-act="p_amt" data-a="${a}">−${AD(a.slice(1))}</button>`).join('')}</div>
     <input class="cu-in" id="pAmt" type="text" inputmode="decimal" placeholder="أو أدخل قيمة مخصصة (سالبة للخصم)" value="${E(P.amt)}" style="margin-top:8px">
     <label class="cu-lbl">السبب (إلزامي)</label><textarea class="cu-ta" id="pReason" placeholder="اكتب سبب الإضافة أو الخصم">${E(P.reason)}</textarea><div class="cu-chips" id="pChips"></div>
     <label class="cu-lbl">التاريخ (اختياري — الافتراضي اليوم)</label><input class="cu-in" type="date" id="pDate" value="${E(P.date)}" min="${p.start}" max="${p.end}">
-    <button class="cu-btn full" style="margin-top:12px" data-act="p_apply" id="pApplyBtn">تطبيق</button></div>
-    <div class="cu-card"><div class="cu-row" style="justify-content:space-between"><div class="cu-h" style="margin:0"><span class="dot"></span>آخر عمليات الطالب</div><button class="cu-btn sec sm" data-act="p_audit">🧾 سجل التدقيق</button></div><div id="pRecent" style="margin-top:8px">${skel(1)}</div></div>`;
-  pChips(); pMark();
+    <div class="cu-mut" id="pSummary" style="margin-top:10px"></div>
+    <button class="cu-btn full" style="margin-top:10px" data-act="p_apply" id="pApplyBtn">تطبيق</button></div>
+    <div class="cu-card"><div class="cu-row" style="justify-content:space-between"><div class="cu-h" style="margin:0"><span class="dot"></span>سجل الطالب</div><button class="cu-btn sec sm" data-act="p_audit">🧾 سجل التدقيق</button></div><div id="pRecent" style="margin-top:8px"></div></div>`;
+  pStuList(); pChips(); pMark(); pSum();
 }
 function pMark(){ T.el.querySelectorAll('[data-act="p_amt"]').forEach(b => b.classList.toggle('on', b.dataset.a === String(T.P.amt))); }
 function pChips(){
-  const box = $('pChips'); if(!box) return; const cat = T.pts.cats.find(c => c.id === T.P.cat); const set = (T.comp.competition.settings || {});
-  box.innerHTML = cat && cat.kind === 'bonus' && (set.bonus_items || []).length
-    ? (set.bonus_items || []).map(i => `<button class="cu-pill" data-act="p_item" data-n="${E(i.name)}" data-a="${i.points}">⭐ ${E(i.name)} (+${NF(i.points)})</button>`).join('')
-    : QUICK_REASONS.map(r => `<button class="cu-pill" data-act="p_reason" data-n="${E(r)}">${E(r)}</button>`).join('');
+  const box = $('pChips'); if(!box) return; const set = (T.comp.competition.settings || {});
+  const anyBonus = T.pts.cats.some(c => c.kind === 'bonus' && T.P.cats.has(c.id));
+  box.innerHTML = (anyBonus && (set.bonus_items || []).length ? (set.bonus_items || []).map(i => `<button class="cu-pill" data-act="p_item" data-n="${E(i.name)}" data-a="${i.points}">⭐ ${E(i.name)} (+${NF(i.points)})</button>`).join('') : '')
+    + QUICK_REASONS.map(r => `<button class="cu-pill" data-act="p_reason" data-n="${E(r)}">${E(r)}</button>`).join('');
 }
 async function pRecent(){
-  const box = $('pRecent'); if(!box || !T.P.sid) return;
-  try { const d = await api('comp_student_detail', {p_comp: T.cid, p_student: T.P.sid}); box.innerHTML = `<div class="cu-mut" style="margin-bottom:6px">المجموع: <b style="color:var(--ink)">${NF(d.total)}</b> · الترتيب: ${d.rank ? '#' + AD(d.rank) : '—'}</div>` + entRows(d.entries, canEditNow(), 12); }
-  catch(e){ box.innerHTML = errBox(e.message); }
+  const box = $('pRecent'); if(!box) return;
+  if(T.P.sids.size !== 1){ box.innerHTML = '<div class="cu-mut">اختر طالباً واحداً لعرض سجله وتصحيح عملياته.</div>'; return; }
+  const sid = [...T.P.sids][0];
+  try { const d = await api('comp_student_detail', {p_comp: T.cid, p_student: sid}); if(!T.P.sids.has(sid) || T.P.sids.size !== 1) return;
+    box.innerHTML = `<div class="cu-mut" style="margin-bottom:6px"><b style="color:var(--ink)">${E(d.name || '')}</b> · المجموع: <b style="color:var(--ink)">${NF(d.total)}</b> · الترتيب: ${d.rank ? '#' + AD(d.rank) : '—'}</div>` + entRows(d.entries, canEditNow(), 12); }
+  catch(e){ box.innerHTML = eb(e); }
 }
+const ST_AR = {cap: 'تجاوز الحد الأسبوعي', below_zero: 'ينزل المجموع تحت الصفر', not_participant: 'غير مشارك', forbidden: 'خارج صلاحيتك', locked: 'مقفلة', bad_category: 'مجال غير صالح'};
 async function pApply(){
   const P = T.P, p = T.pts; const amt = Number(String(P.amt).replace(/[٠-٩]/g, x => '٠١٢٣٤٥٦٧٨٩'.indexOf(x)).replace('−', '-'));
-  const stu = p.rows.find(r => r.student_id === P.sid), cat = p.cats.find(c => c.id === P.cat);
-  if(!stu || !cat){ toast2('اختر الطالب والمجال'); return; }
+  const sids = [...P.sids], cids = [...P.cats];
+  if(!sids.length || !cids.length){ toast2('اختر طالباً واحداً على الأقل ومجالاً واحداً على الأقل'); return; }
   if(!P.amt || isNaN(amt) || amt === 0){ toast2('أدخل قيمة النقاط (موجبة للإضافة وسالبة للخصم)'); return; }
   if((P.reason || '').trim().length < 2){ toast2('اكتب سبب العملية'); return; }
-  if(amt < 0 && !(await ask('خصم ' + NF(-amt) + ' نقطة من «' + stu.name + '» في «' + cat.name + '»؟\nالسبب: ' + P.reason, {danger: true, ok: 'تأكيد الخصم'}))) return;
-  const op = UID(), args = {p_comp: T.cid, p_student: P.sid, p_category: P.cat, p_points: amt, p_reason: P.reason.trim(), p_date: P.date || null, p_op: op};
+  const ops = sids.length * cids.length;
+  if((amt < 0 || ops > 1) && !(await ask((amt < 0 ? 'خصم ' : 'إضافة ') + NF(Math.abs(amt)) + ' نقطة في كل عملية — ' + AD(sids.length) + ' طالب × ' + AD(cids.length) + ' مجال = ' + AD(ops) + ' عملية.\nالسبب: ' + P.reason, {danger: amt < 0, ok: amt < 0 ? 'تأكيد الخصم' : 'تأكيد'}))) return;
+  const op = UID(), args = {p_comp: T.cid, p_students: sids, p_categories: cids, p_points: amt, p_reason: P.reason.trim(), p_date: P.date || null, p_op: op};
   const btn = $('pApplyBtn'); if(btn) btn.disabled = true;
   try {
-    await api('comp_adjust', args);
-    toast2((amt > 0 ? '✅ أُضيف ' : '✅ خُصم ') + NF(Math.abs(amt)) + ' نقطة — ' + stu.name);
+    const r = await api('comp_adjust_many', args);
+    const bad = (r.results || []).filter(x => x.status !== 'saved');
+    toast2(bad.length ? '⚠️ نُفّذ ' + AD(r.saved) + ' وتعذّر ' + AD(bad.length) + ': ' + (ST_AR[bad[0].status] || bad[0].status) : (amt > 0 ? '✅ أُضيفت النقاط (' : '✅ خُصمت النقاط (') + AD(r.saved) + ' عملية)');
     P.amt = ''; P.reason = ''; T.lb = null; pRender(); pRecent();
   } catch(e){
-    if(e.net){ T.outbox.push({id: op, uid: myId(), type: 'adjust', comp: T.cid, student: P.sid, category: P.cat, points: amt, reason: args.p_reason, date: args.p_date, op, at: Date.now()}); obSave();
-      toast2('📴 لا يوجد اتصال — حُفظت العملية مؤقتاً ولم تُزامن بعد (⏳)'); P.amt = ''; P.reason = ''; pRender(); }
+    if(e.net){ T.outbox.push({id: op, uid: myId(), type: 'adjust_many', comp: T.cid, students: sids, categories: cids, points: amt, reason: args.p_reason, date: args.p_date, op, at: Date.now()}); obSave();
+      toast2('📴 لا يوجد اتصال — حُفظت العملية على جهازك ⏳ وستُرفع تلقائياً عند عودة الإنترنت'); P.amt = ''; P.reason = ''; pRender(); }
     else { toast2('❌ ' + e.message); if(btn) btn.disabled = false; }
   }
 }
@@ -1256,55 +1297,289 @@ async function aGrade(id, sid){
   } catch(e){ const er = $('grErr'); er.textContent = e.message; er.style.display = 'block'; }
 }
 
-/* ═════════ المحادثات (المعلم ↔ الطالب) ═════════ */
-async function tChatList(){
-  const r = await api('chat_threads'); const main = $('cuMain');
-  let h = `<button class="cu-btn full" data-act="c_new" style="margin-bottom:12px">＋ محادثة جديدة مع طالب</button>`;
-  if(!r.rows.length) h += emptyBox('💬', 'لا توجد محادثات بعد', 'عندما يراسلك طالب ستظهر محادثته هنا، ويمكنك أيضاً بدء محادثة جديدة.');
-  h += r.rows.map(t => `<div class="cu-card" data-act="c_open" data-s="${E(t.student_id)}" data-n="${E(t.name)}" style="cursor:pointer"><div class="cu-row" style="justify-content:space-between"><b style="font-size:14px">👤 ${E(t.name)}</b>${t.unread ? `<span class="cu-st green">${AD(t.unread)} جديدة</span>` : ''}</div>
-    <div class="cu-mut" style="margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.last_role === 'student' ? '' : 'أنت: '}${E(t.last_body)}</div><div class="cu-mut">${fmtT(t.last_at)} · ${E(hqName(t.halaqa_id))}</div></div>`).join('');
-  main.innerHTML = h;
+/* ═════════ المحادثات v2: نصوص + صور + فيديو + صوت + ردود + تعديل/حذف + مجموعات + ترتيب + إشعارات ═════════ */
+const CH = {hostId: 'cuMain', mode: 'staff', list: null, key: null, title: '', rows: [], canPost: true, kind: 's', staff: true, pend: [], reply: null, edit: null, order: false, rec: null, sig: ''};
+const MEDIA = new Map();
+const chHost = () => $(CH.hostId);
+const isStaffUser = () => role() !== 'student';
+const owner = () => CH.mode === 'student' ? S : T;
+function chReset(){ CH.key = null; CH.reply = null; CH.edit = null; if(CH.rec) chRecStop(false); }
+const kindPrev = (k, b) => k === 'image' ? '📷 صورة' : k === 'video' ? '🎬 فيديو' : k === 'audio' ? '🎤 رسالة صوتية' : (b || '');
+async function sChat(){ return chList('cuBody', 'student'); }
+async function tChatList(){ return chList('cuMain', 'staff'); }
+
+async function chList(hostId, mode){
+  CH.hostId = hostId; CH.mode = mode; CH.key = null;
+  const host = chHost(); if(!host) return; host.innerHTML = skel(3);
+  try { CH.list = await api('chat2_threads'); } catch(e){ host.innerHTML = eb(e, 'c_back'); return; }
+  chListRender();
+  const o = owner(); clearInterval(o.chatTimer);
+  o.chatTimer = setInterval(async () => { if(CH.key || !online() || document.visibilityState !== 'visible') return; try { CH.list = await api('chat2_threads'); chListRender(); } catch(e){} }, 15000);
+}
+function chOrdered(rows, order){
+  const idx = new Map((order || []).map((k, i) => [k, i]));
+  const saved = rows.filter(r => idx.has(r.key)).sort((a, b) => idx.get(a.key) - idx.get(b.key));
+  const fresh = rows.filter(r => !idx.has(r.key));
+  const pinned = fresh.filter(r => r.pinned), rest = fresh.filter(r => !r.pinned).sort((a, b) => String(b.last_at || '').localeCompare(String(a.last_at || '')));
+  return [...pinned, ...saved, ...rest];
+}
+function chListRender(){
+  const host = chHost(); if(!host || CH.key) return; const r = CH.list, rows = chOrdered(r.rows, r.order), staff = isStaffUser();
+  const canGroup = staff && (role() !== 'employee' || can('messages'));
+  const notif = ('Notification' in window && Notification.permission === 'default') ? '<button class="cu-btn amb sm" data-act="c_notif">🔔 تفعيل الإشعارات</button>' : '';
+  let h = `<div class="cu-row wrap" style="margin-bottom:10px">${staff ? '<button class="cu-btn sm" data-act="c_new">＋ محادثة مع طالب</button>' : ''}${canGroup ? '<button class="cu-btn sm" data-act="c_group">👥 مجموعة لجميع الطلاب</button>' : ''}<button class="cu-btn sec sm" data-act="c_order">${CH.order ? '✔ تم' : '⇅ ترتيب المحادثات'}</button>${notif}</div>`;
+  if(!rows.length) h += emptyBox('💬', 'لا توجد محادثات بعد', staff ? 'ابدأ محادثة مع طالب أو أنشئ مجموعة لجميع الطلاب.' : 'ستظهر هنا محادثة معلمك ومجموعات حلقتك.');
+  h += rows.map(t => `<div class="cu-card" style="padding:11px;margin-bottom:8px;cursor:pointer" data-act="c_open" data-k="${E(t.key)}" data-n="${E(t.title)}"><div class="cu-row"><span style="font-size:23px">${t.kind === 'g' ? '👥' : (staff ? '👤' : '🧑‍🏫')}</span>
+    <div class="cu-grow" style="min-width:0"><div class="cu-row" style="justify-content:space-between"><b style="font-size:14px">${t.pinned ? '📌 ' : ''}${E(t.title)}</b><span class="cu-mut" style="white-space:nowrap">${t.last_at ? fmtT(t.last_at) : ''}</span></div>
+    <div class="cu-mut" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${E(kindPrev(t.last_kind, t.last_body)) || '—'}</div></div>
+    ${t.unread ? `<i class="cu-reddot" style="position:static">${AD(t.unread)}</i>` : ''}
+    ${CH.order ? `<div style="display:flex;flex-direction:column;gap:2px"><button class="cu-pill" style="padding:1px 8px" data-act="c_up" data-k="${E(t.key)}">▲</button><button class="cu-pill" style="padding:1px 8px" data-act="c_dn" data-k="${E(t.key)}">▼</button></div>` : ''}</div></div>`).join('');
+  host.innerHTML = h;
+}
+async function chMove(key, dir){
+  const keys = chOrdered(CH.list.rows, CH.list.order).map(r => r.key), i = keys.indexOf(key), j = i + dir;
+  if(i < 0 || j < 0 || j >= keys.length) return;
+  [keys[i], keys[j]] = [keys[j], keys[i]]; CH.list.order = keys; chListRender();
+  try { await api('chat2_prefs_set', {p_order: keys}); } catch(e){ toast2('❌ ' + e.message); }
+}
+
+async function chOpen(key, title){
+  CH.key = key; CH.title = title; CH.rows = []; CH.pend = []; CH.reply = null; CH.edit = null; CH.sig = ''; CH.order = false;
+  const host = chHost(); if(!host) return;
+  host.innerHTML = `<div class="cu-row" style="margin-bottom:8px"><button class="cu-btn sec sm" data-act="c_back">→</button><b class="cu-grow" style="font-size:14px">${E(title)}</b><button class="cu-btn sec sm" data-act="c_menu">⋯</button></div>
+    <div class="cu-card" style="padding:10px"><div class="cu-chat" id="cuChatList">${skel(2)}</div><div id="cuChatBar"></div>
+    <div id="cuComposer" class="cu-send" style="align-items:flex-end"><button class="cu-pill" data-act="c_attach" title="إرفاق">📎</button><button class="cu-pill" data-act="c_rec" title="تسجيل صوتي">🎤</button>
+      <textarea class="cu-in" id="cuChatIn" rows="1" maxlength="1500" placeholder="اكتب رسالتك…" style="resize:none;max-height:90px"></textarea><button class="cu-btn" data-act="c_send" id="cuSendBtn">إرسال</button></div>
+    <div class="cu-mut" id="cuChatNote" style="margin-top:6px"></div></div>
+    <input type="file" id="cuFImg" accept="image/*" hidden><input type="file" id="cuFVid" accept="video/*" hidden><input type="file" id="cuFAud" accept="audio/*" hidden>`;
+  const ta = $('cuChatIn'); ta.addEventListener('keydown', e => { if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); chSend(); } });
+  [['cuFImg', 'image'], ['cuFVid', 'video'], ['cuFAud', 'audio']].forEach(([id, k]) => $(id).addEventListener('change', e => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if(f) chFile(f, k); }));
+  await chPoll(true);
+  const o = owner(); clearInterval(o.chatTimer);
+  o.chatTimer = setInterval(() => { if(CH.key === key && online() && document.visibilityState === 'visible') chPoll(false); }, 6000);
+  notifyTick(true);
+}
+async function chPoll(first){
+  if(!CH.key) return;
+  try {
+    const r = await api('chat2_get', {p_key: CH.key, p_limit: 150});
+    CH.canPost = !!r.can_post; CH.kind = r.kind; CH.staff = !!r.staff;
+    const sig = JSON.stringify(r.rows.map(m => [m.id, m.edited_at, m.deleted, (m.body || '').length])) + (r._cached || '');
+    if(!first && sig === CH.sig) return; CH.sig = sig; CH.rows = r.rows;
+    const comp = $('cuComposer'), note = $('cuChatNote');
+    if(comp) comp.style.display = CH.canPost ? '' : 'none';
+    if(note) note.textContent = CH.canPost ? 'الصور والفيديو والصوت متاحة من 📎 و 🎤 — حتى ٢٥ ميجابايت للفيديو.' : '🔒 الكتابة في هذه المجموعة مغلقة من المعلم (للقراءة فقط).';
+    chRender(first);
+  } catch(e){ if(first){ const l = $('cuChatList'); if(l) l.innerHTML = eb(e, 'c_back'); } }
+}
+function chBubble(m){
+  let body = '';
+  if(m.deleted) body = '<i style="opacity:.75">🚫 تم حذف هذه الرسالة</i>';
+  else {
+    if(m.reply) body += `<div class="cu-quote" data-act="c_goto" data-id="${m.reply.id}"><b>${E(m.reply.sender_name || '')}</b><br>${m.reply.deleted ? '🚫 رسالة محذوفة' : E(kindPrev(m.reply.kind, m.reply.body))}</div>`;
+    if(m.media_id && m.kind === 'image') body += `<div class="cu-media" data-mid="${m.media_id}" data-kind="image"><span class="cu-mut">⏳ جارٍ تحميل الصورة…</span></div>`;
+    else if(m.media_id) body += `<div class="cu-media" data-mid="${m.media_id}" data-kind="${m.kind}"><button class="cu-pill" data-act="c_play" data-mid="${m.media_id}" data-kind="${m.kind}">${m.kind === 'video' ? '🎬 تشغيل الفيديو' : '🎤 رسالة صوتية ▶'}${m.media && m.media.size ? ' (' + AD(Math.max(1, Math.round(m.media.size / 1024))) + ' ك.ب)' : ''}</button></div>`;
+    else if(m.kind !== 'text') body += '<i style="opacity:.75">⌛ انتهت صلاحية المرفق</i>';
+    if(m.body) body += `<div>${E(m.body).replace(/\n/g, '<br>')}</div>`;
+  }
+  return `<div class="cu-bub ${m.mine ? 'me' : 'th'}" id="msg${m.id}">${m.mine ? '' : `<b style="font-size:10.5px">${E(m.sender_name || '')}</b><br>`}${body}<small>${fmtT(m.created_at)}${m.edited_at ? ' · معدّلة' : ''}${m.deleted ? '' : ` <a href="#" data-act="c_msg" data-id="${m.id}" style="color:inherit;font-weight:900;text-decoration:none"> ⋯ </a>`}</small></div>`;
+}
+function chRender(scroll){
+  const l = $('cuChatList'); if(!l) return;
+  const atBottom = l.scrollHeight - l.scrollTop - l.clientHeight < 80;
+  l.innerHTML = (CH.rows.map(chBubble).join('') + CH.pend.map(p => `<div class="cu-bub me pend">${E(p.body || p.label || '')}<small>${p.failed ? `⏳ لم تُرسل — <a href="#" data-act="c_retry" data-id="${p.id}" style="color:#fff;text-decoration:underline">إعادة الإرسال</a>` : (p.label ? E(p.label) : '⏳ جارٍ الإرسال…')}</small></div>`).join('')) || emptyBox('💬', 'ابدأ المحادثة');
+  if(scroll || atBottom) l.scrollTop = l.scrollHeight;
+  l.querySelectorAll('.cu-media[data-kind="image"]:not([data-done])').forEach(el => chShowMedia(el, false));
+  chBarRender();
+}
+async function chMedia(id, el){
+  if(MEDIA.has(id)) return MEDIA.get(id);
+  const first = await api('chat2_media_get', {p_id: id, p_idx: 0}); const parts = [first.data];
+  for(let i = 1; i < first.chunks; i++){ parts.push((await api('chat2_media_get', {p_id: id, p_idx: i})).data); if(el) el.dataset.p = Math.round(100 * (i + 1) / first.chunks); }
+  const bytes = parts.map(b64 => { const bin = atob(b64), u = new Uint8Array(bin.length); for(let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return u; });
+  const url = URL.createObjectURL(new Blob(bytes, {type: first.mime || 'application/octet-stream'})); MEDIA.set(id, url); return url;
+}
+async function chShowMedia(el, play){
+  el.dataset.done = '1'; const id = el.dataset.mid, k = el.dataset.kind;
+  try {
+    const url = await chMedia(id, el);
+    el.innerHTML = k === 'image' ? `<img src="${url}" data-act="c_zoom" data-src="${url}" style="max-width:220px;max-height:260px;border-radius:12px;cursor:zoom-in">`
+      : k === 'video' ? `<video controls playsinline src="${url}" style="max-width:240px;border-radius:12px" ${play ? 'autoplay' : ''}></video>` : `<audio controls src="${url}" ${play ? 'autoplay' : ''}></audio>`;
+  } catch(e){ delete el.dataset.done; el.innerHTML = `<span class="cu-mut">⚠️ ${E(e.message)} — <a href="#" data-act="c_play" data-mid="${id}" data-kind="${k}">إعادة</a></span>`; }
+}
+function chBarRender(){
+  const bar = $('cuChatBar'); if(!bar) return;
+  if(CH.rec){ bar.innerHTML = `<div class="cu-warn" style="background:#fef2f2;border-color:#fecaca;color:#991b1b;display:flex;align-items:center;gap:8px"><span>🔴 جارٍ التسجيل <b id="cuRecT">٠٠:٠٠</b></span><span class="cu-grow"></span><button class="cu-btn red sm" data-act="c_recx">إلغاء</button><button class="cu-btn sm" data-act="c_recs">إرسال ➤</button></div>`; return; }
+  const q = CH.edit ? ['✏️ تعديل الرسالة', CH.edit.body] : CH.reply ? ['↩ رد على ' + (CH.reply.sender_name || ''), kindPrev(CH.reply.kind, CH.reply.body)] : null;
+  bar.innerHTML = q ? `<div class="cu-quote" style="display:flex;align-items:center;gap:8px;margin-top:6px"><div class="cu-grow"><b>${E(q[0])}</b><br>${E(String(q[1]).slice(0, 80))}</div><button class="cu-pill" data-act="c_cancel">✕</button></div>` : '';
+  const b = $('cuSendBtn'); if(b) b.textContent = CH.edit ? 'حفظ' : 'إرسال';
+}
+async function chSend(retryId){
+  if(!CH.key) return; const inp = $('cuChatIn');
+  if(CH.edit){
+    const v = (inp.value || '').trim(); if(!v) return; const id = CH.edit.id;
+    try { await api('chat2_edit', {p_id: id, p_body: v}); CH.edit = null; inp.value = ''; CH.sig = ''; await chPoll(true); } catch(e){ toast2('❌ ' + e.message); }
+    return;
+  }
+  let item;
+  if(retryId){ item = CH.pend.find(p => p.id === retryId); if(!item) return; item.failed = false; }
+  else { const v = (inp.value || '').trim(); if(!v) return; item = {id: UID(), body: v, reply: CH.reply ? CH.reply.id : null, failed: false}; CH.pend.push(item); inp.value = ''; CH.reply = null; }
+  chRender(true);
+  try {
+    await api('chat2_send', {p_key: CH.key, p_kind: 'text', p_body: item.body, p_media: null, p_reply: item.reply, p_op: item.id});
+    CH.pend = CH.pend.filter(p => p.id !== item.id); CH.sig = ''; await chPoll(true);
+  } catch(e){ item.failed = true; chRender(true); toast2('❌ لم تُرسل الرسالة: ' + e.message); }
+}
+/* ── المرفقات: صور (تُضغط) وفيديو وصوت، رفع مجزّأ ── */
+const blobToB64 = b => new Promise((res, rej) => { const fr = new FileReader(); fr.onload = () => { const s = String(fr.result); res(s.slice(s.indexOf(',') + 1)); }; fr.onerror = rej; fr.readAsDataURL(b); });
+async function chCompress(file){
+  if(!/^image\//.test(file.type) || file.type === 'image/gif' || typeof createImageBitmap !== 'function') return file;
+  try {
+    const bmp = await createImageBitmap(file), sc = Math.min(1, 1280 / Math.max(bmp.width, bmp.height));
+    const c = document.createElement('canvas'); c.width = Math.round(bmp.width * sc); c.height = Math.round(bmp.height * sc); c.getContext('2d').drawImage(bmp, 0, 0, c.width, c.height);
+    const b = await new Promise(r => c.toBlob(r, 'image/jpeg', 0.72)); return (b && b.size < file.size) ? b : file;
+  } catch(e){ return file; }
+}
+async function chUpload(blob, kind, name, onp){
+  const CHUNK = 450000, n = Math.max(1, Math.ceil(blob.size / CHUNK));
+  const st = await api('chat2_media_start', {p_key: CH.key, p_kind: kind, p_mime: blob.type || '', p_name: name || '', p_size: blob.size, p_chunks: n});
+  for(let i = 0; i < n; i++){ await api('chat2_media_chunk', {p_id: st.id, p_idx: i, p_data: await blobToB64(blob.slice(i * CHUNK, (i + 1) * CHUNK))}); if(onp) onp(Math.round(100 * (i + 1) / n)); }
+  await api('chat2_media_finish', {p_id: st.id}); return st.id;
+}
+async function chSendBlob(blob, kind, name){
+  if(!CH.key) return;
+  if(!online()){ toast2('📴 إرسال الوسائط يحتاج اتصالاً بالإنترنت'); return; }
+  const lim = {image: 6291456, audio: 12582912, video: 26214400}[kind];
+  if(kind === 'image') blob = await chCompress(blob);
+  if(blob.size > lim){ toast2('⚠️ الملف كبير (الحد ' + AD(Math.round(lim / 1048576)) + ' ميجابايت) — اختر ملفاً أصغر'); return; }
+  const item = {id: UID(), label: '⏳ جارٍ رفع ' + (kind === 'image' ? 'الصورة' : kind === 'video' ? 'الفيديو' : 'الصوت') + '… ٠٪', body: ''}; CH.pend.push(item); chRender(true);
+  const reply = CH.reply ? CH.reply.id : null; CH.reply = null;
+  try {
+    const mid = await chUpload(blob, kind, name, p => { item.label = '⏳ جارٍ الرفع… ' + AD(p) + '٪'; const l = $('cuChatList'); if(l) chRender(true); });
+    await api('chat2_send', {p_key: CH.key, p_kind: kind, p_body: '', p_media: mid, p_reply: reply, p_op: item.id});
+    CH.pend = CH.pend.filter(p => p.id !== item.id); CH.sig = ''; await chPoll(true);
+  } catch(e){ CH.pend = CH.pend.filter(p => p.id !== item.id); chRender(true); toast2('❌ تعذّر إرسال المرفق: ' + e.message); }
+}
+function chFile(f, kind){ chSendBlob(f, kind, f.name); }
+async function chRecStart(){
+  if(CH.rec) return;
+  if(!navigator.mediaDevices || !window.MediaRecorder){ toast2('هذا المتصفح لا يدعم التسجيل الصوتي المباشر — استخدم 📎 لإرسال ملف صوتي'); return; }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({audio: true});
+    const mime = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg'].find(m => MediaRecorder.isTypeSupported && MediaRecorder.isTypeSupported(m)) || '';
+    const rec = new MediaRecorder(stream, mime ? {mimeType: mime} : undefined), chunks = [];
+    rec.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+    CH.rec = {rec, stream, chunks, t0: Date.now(), mime: rec.mimeType || mime || 'audio/webm', timer: setInterval(() => { const s = Math.floor((Date.now() - CH.rec.t0) / 1000), el = $('cuRecT'); if(el) el.textContent = AD(String(Math.floor(s / 60)).padStart(2, '0') + ':' + String(s % 60).padStart(2, '0')); if(s >= 300) chRecStop(true); }, 500)};
+    rec.start(1000); chBarRender();
+  } catch(e){ toast2('تعذّر الوصول إلى الميكروفون — اسمح بالإذن من إعدادات المتصفح'); }
+}
+function chRecStop(send){
+  const R = CH.rec; if(!R) return; clearInterval(R.timer); CH.rec = null;
+  R.rec.onstop = async () => {
+    R.stream.getTracks().forEach(t => t.stop());
+    if(!send) return;
+    const blob = new Blob(R.chunks, {type: R.mime});
+    if(blob.size < 800){ toast2('التسجيل قصير جداً'); return; }
+    await chSendBlob(blob, 'audio', 'voice.' + (/mp4/.test(R.mime) ? 'm4a' : 'webm'));
+  };
+  try { R.rec.stop(); } catch(e){}
+  chBarRender();
+}
+/* ── قوائم الإجراءات: رسالة / محادثة / مجموعة ── */
+function chMsgMenu(id){
+  const m = CH.rows.find(x => String(x.id) === String(id)); if(!m) return;
+  const mod = m.mine || CH.staff;
+  const md = modal(`<h3>الرسالة</h3><div class="cu-col" style="display:flex;flex-direction:column;gap:8px">
+    ${CH.canPost ? '<button class="cu-btn sec" data-act="c_reply" data-id="' + id + '">↩ رد</button>' : ''}${m.body ? '<button class="cu-btn sec" data-act="c_copy" data-id="' + id + '">📋 نسخ النص</button>' : ''}
+    ${m.mine && m.kind === 'text' ? '<button class="cu-btn sec" data-act="c_edit" data-id="' + id + '">✏️ تعديل</button>' : ''}${mod ? '<button class="cu-btn red" data-act="c_del" data-id="' + id + '">🗑 حذف الرسالة</button>' : ''}
+    <button class="cu-btn sec" onclick="this.closest('.cu-modal').remove()">إغلاق</button></div>`);
+  bindClicks(md, CHH);
+}
+function chThreadMenu(){
+  const t = CH.list && CH.list.rows.find(r => r.key === CH.key), isG = CH.key.startsWith('g:');
+  const md = modal(`<h3>${E(CH.title)}</h3><div style="display:flex;flex-direction:column;gap:8px">
+    <button class="cu-btn sec" data-act="c_clr">🧹 مسح المحادثة من عندي فقط</button>
+    ${CH.staff ? '<button class="cu-btn red" data-act="c_clrall">🗑 حذف المحادثة نهائياً للجميع</button>' : ''}
+    ${isG && CH.staff ? '<button class="cu-btn sec" data-act="c_gedit">✏️ تعديل المجموعة (الاسم / إغلاق الكتابة)</button><button class="cu-btn red" data-act="c_gdel">🗑 حذف المجموعة بالكامل</button>' : ''}
+    <button class="cu-btn sec" onclick="this.closest('.cu-modal').remove()">إغلاق</button></div>`);
+  bindClicks(md, CHH);
+}
+async function chGroupForm(g){
+  const ro = (isStaffUser() && !g && role() !== 'teacher') ? await tRoster().catch(() => null) : null;
+  const fields = [{k: 'name', label: 'اسم المجموعة', value: g ? g.title : 'مجموعة الحلقة', required: true}];
+  if(ro) fields.push({k: 'h', label: 'الحلقة', type: 'select', value: '', options: [['', 'كل طلاب المركز'], ...ro.halaqat.map(h => [h.id, h.name])]});
+  fields.push({k: 'a', label: 'هل يستطيع الطلاب الكتابة؟', type: 'select', value: g && g.allow_students === false ? '0' : '1', options: [['1', 'نعم، يكتبون ويردّون'], ['0', 'لا — للمعلم فقط (إعلانات)']]});
+  const v = await formModal(g ? '✏️ تعديل المجموعة' : '👥 مجموعة لجميع الطلاب', fields, {ok: g ? 'حفظ' : 'إنشاء المجموعة', note: g ? '' : 'تظهر مثبّتة في أول قائمة المحادثات عند الطلاب.'}); if(!v) return;
+  await api('chat2_group_save', {p_id: g ? g.group_id : null, p_name: v.name, p_halaqa: v.h || null, p_allow: v.a !== '0'});
+  toast2('✅ تم حفظ المجموعة'); CH.key = null; chList(CH.hostId, CH.mode);
 }
 async function tChatNew(){
   const ro = await tRoster(); const list = ro.students || [];
   if(!list.length){ toast2('لا يوجد طلاب'); return; }
   const v = await formModal('محادثة جديدة', [{k: 's', label: 'الطالب', type: 'select', value: list[0].id, options: list.map(s => [s.id, s.name + (ro.halaqat.length > 1 ? ' — ' + hqName(s.halaqa_id) : '')])}], {ok: 'فتح المحادثة'});
-  if(!v) return; const s = list.find(x => String(x.id) === v.s); tChatOpen(v.s, s ? s.name : '');
+  if(!v) return; const s = list.find(x => String(x.id) === v.s); chOpen('s:' + v.s, s ? s.name : '');
 }
-async function tChatOpen(sid, name){
-  T.chat = {sid, name, rows: [], last: 0, pend: []};
-  const main = $('cuMain');
-  main.innerHTML = `<button class="cu-btn sec sm" data-act="c_back">→ المحادثات</button><div class="cu-card" style="margin-top:8px"><div class="cu-h">💬 ${E(name)}</div><div class="cu-chat" id="cuTChat">${skel(2)}</div>
-    <div class="cu-send"><input class="cu-in" id="cuTIn" maxlength="1500" placeholder="اكتب رسالة للطالب…"><button class="cu-btn" data-act="c_send">إرسال</button></div></div>`;
-  $('cuTIn').addEventListener('keydown', e => { if(e.key === 'Enter') tChatSend(); });
-  await tChatPoll(true);
-  clearInterval(T.chatTimer);
-  T.chatTimer = setInterval(() => { if(T.tab === 'chat' && T.chat.sid === sid && online() && document.visibilityState === 'visible') tChatPoll(false); }, 8000);
+const CHH = {
+  c_open: t => chOpen(t.dataset.k, t.dataset.n),
+  c_back: () => { if(CH.key){ CH.key = null; chList(CH.hostId, CH.mode); } else if(CH.mode === 'student') sChat(); else tGo('chat'); },
+  c_new: () => tChatNew(), c_group: () => chGroupForm(null),
+  c_order: () => { CH.order = !CH.order; chListRender(); }, c_up: t => chMove(t.dataset.k, -1), c_dn: t => chMove(t.dataset.k, 1),
+  c_notif: async () => { try { const p = await Notification.requestPermission(); toast2(p === 'granted' ? '🔔 تم تفعيل الإشعارات' : 'لم يُمنح إذن الإشعارات'); } catch(e){} chListRender(); },
+  c_send: () => chSend(), c_retry: t => chSend(t.dataset.id), c_cancel: () => { CH.reply = null; CH.edit = null; const i = $('cuChatIn'); if(i) i.value = ''; chBarRender(); },
+  c_attach: () => { const md = modal(`<h3>إرفاق</h3><div style="display:flex;flex-direction:column;gap:8px"><button class="cu-btn sec" data-act="c_pick" data-k="cuFImg">📷 صورة</button><button class="cu-btn sec" data-act="c_pick" data-k="cuFVid">🎬 فيديو</button><button class="cu-btn sec" data-act="c_pick" data-k="cuFAud">🎵 ملف صوتي</button><button class="cu-btn sec" onclick="this.closest('.cu-modal').remove()">إلغاء</button></div>`); bindClicks(md, CHH); },
+  c_pick: t => { t.closest('.cu-modal').remove(); const f = $(t.dataset.k); if(f) f.click(); },
+  c_rec: () => chRecStart(), c_recx: () => chRecStop(false), c_recs: () => chRecStop(true),
+  c_play: t => { const el = t.closest('.cu-media'); if(el) chShowMedia(el, t.dataset.kind !== 'image'); },
+  c_zoom: t => { modal(`<div style="text-align:center"><img src="${t.dataset.src}" style="max-width:100%;max-height:78vh;border-radius:12px"></div><button class="cu-btn sec full" style="margin-top:10px" onclick="this.closest('.cu-modal').remove()">إغلاق</button>`); },
+  c_goto: t => { const el = $('msg' + t.dataset.id); if(el){ el.scrollIntoView({block: 'center'}); el.style.outline = '2px solid var(--g2)'; setTimeout(() => el.style.outline = '', 1400); } },
+  c_msg: t => chMsgMenu(t.dataset.id),
+  c_reply: t => { const m = CH.rows.find(x => String(x.id) === t.dataset.id); t.closest('.cu-modal').remove(); if(m){ CH.reply = m; CH.edit = null; chBarRender(); const i = $('cuChatIn'); if(i) i.focus(); } },
+  c_copy: t => { const m = CH.rows.find(x => String(x.id) === t.dataset.id); t.closest('.cu-modal').remove(); if(m && typeof clip === 'function') clip(m.body, '✅ تم النسخ'); },
+  c_edit: t => { const m = CH.rows.find(x => String(x.id) === t.dataset.id); t.closest('.cu-modal').remove(); if(m){ CH.edit = m; CH.reply = null; const i = $('cuChatIn'); if(i){ i.value = m.body; i.focus(); } chBarRender(); } },
+  c_del: async t => { const id = t.dataset.id; t.closest('.cu-modal').remove(); if(!(await ask('حذف هذه الرسالة للجميع؟', {danger: true, ok: 'حذف'}))) return; await api('chat2_delete', {p_id: Number(id)}); CH.sig = ''; await chPoll(true); },
+  c_menu: () => chThreadMenu(),
+  c_clr: async t => { t.closest('.cu-modal').remove(); if(!(await ask('مسح المحادثة من عندك فقط؟ ستبقى عند الطرف الآخر.', {ok: 'مسح'}))) return; await api('chat2_clear', {p_key: CH.key, p_everyone: false}); CH.sig = ''; await chPoll(true); },
+  c_clrall: async t => { t.closest('.cu-modal').remove(); if(!(await ask('حذف المحادثة نهائياً للجميع (مع كل الوسائط)؟ لا يمكن التراجع.', {danger: true, ok: 'حذف نهائي'}))) return; await api('chat2_clear', {p_key: CH.key, p_everyone: true}); toast2('🗑 تم حذف المحادثة'); CH.key = null; chList(CH.hostId, CH.mode); },
+  c_gedit: t => { t.closest('.cu-modal').remove(); const g = CH.list.rows.find(r => r.key === CH.key); chGroupForm(g || null); },
+  c_gdel: async t => { t.closest('.cu-modal').remove(); if(!(await ask('حذف المجموعة بكل رسائلها ووسائطها؟', {danger: true, ok: 'حذف المجموعة'}))) return; await api('chat2_group_delete', {p_id: CH.key.slice(2)}); toast2('🗑 تم حذف المجموعة'); CH.key = null; chList(CH.hostId, CH.mode); }
+};
+Object.assign(SH, CHH); Object.assign(TH, CHH);
+
+/* ── الإشعارات: نقطة حمراء + تنبيه داخل التطبيق + إشعار الجهاز + شارة أيقونة التطبيق ── */
+const NT = {last: 0};
+function setDot(el, n){
+  if(!el) return; let d = [...el.children].find(c => c.classList && c.classList.contains('cu-reddot'));
+  if(!n){ if(d) d.remove(); return; }
+  if(!d){ if(getComputedStyle(el).position === 'static') el.style.position = 'relative'; d = document.createElement('i'); d.className = 'cu-reddot'; el.appendChild(d); }
+  d.textContent = n > 99 ? '99+' : AD(n);
 }
-async function tChatPoll(first){
-  const C = T.chat;
-  try {
-    const r = await api('chat_get', {p_student: C.sid, p_after: C.last, p_limit: 200});
-    if(r.rows.length){ C.rows = C.rows.concat(r.rows); C.last = r.rows[r.rows.length - 1].id; }
-    tChatRender(first);
-  } catch(e){ if(first){ const l = $('cuTChat'); if(l) l.innerHTML = errBox(e.message, 'c_back'); } }
+function applyDots(n){
+  setDot($('nt-comp'), n); setDot($('hqCompBtn'), n); setDot(document.querySelector('.sp-tab[data-tab="badges"]'), n);
+  if(T.el) setDot(T.el.querySelector('#cuTabs [data-t="chat"]'), n);
+  const u = $('cuUnread'); if(u){ u.style.display = n && !(S.seg === 'chat' && CH.key) ? 'flex' : 'none'; u.textContent = AD(n); }
 }
-function tChatRender(scroll){
-  const l = $('cuTChat'); if(!l) return; const C = T.chat;
-  const atBottom = l.scrollHeight - l.scrollTop - l.clientHeight < 60;
-  const rows = C.rows.map(m => `<div class="cu-bub ${m.mine ? 'me' : 'th'}">${m.mine ? '' : `<b style="font-size:10.5px">${E(m.sender_name || C.name)}</b><br>`}${E(m.body)}<small>${fmtT(m.created_at)}</small></div>`).join('')
-    + C.pend.map(p => `<div class="cu-bub me pend">${E(p.body)}<small>⏳ لم تُرسل — ${p.failed ? `<a href="#" data-act="c_retry" data-id="${p.id}" style="color:#fff;text-decoration:underline">إعادة الإرسال</a>` : 'جارٍ الإرسال…'}</small></div>`).join('');
-  l.innerHTML = rows || emptyBox('💬', 'ابدأ المحادثة');
-  if(scroll || atBottom) l.scrollTop = l.scrollHeight;
+async function notifyTick(force){
+  if(typeof _currentUser === 'undefined' || !_currentUser || !online() || !_authToken || (_currentUser.role === 'masool')) return;
+  let r; try { r = await _rpcT('chat2_unread', {}, true); } catch(e){ return; }
+  if(!r || r.ok === false) return;
+  const n = r.unread || 0; applyDots(n);
+  if(n > NT.last && !force){
+    const who = (r.senders || []).slice(0, 2).join('، ');
+    const viewing = CH.key && ((T.el && T.tab === 'chat') || (S.host && S.host.isConnected && S.seg === 'chat'));
+    if(!viewing) toast2('💬 رسالة جديدة' + (who ? ' من ' + who : ''));
+    if(document.hidden && 'Notification' in window && Notification.permission === 'granted'){
+      try { const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration(); const o = {body: 'لديك ' + AD(n) + ' رسالة غير مقروءة' + (who ? ' — ' + who : ''), tag: 'ridwan-chat', icon: './icon-192.png', vibrate: [120, 60, 120]};
+        if(reg && reg.showNotification) reg.showNotification('نظام مركز الكتاب', o); else new Notification('نظام مركز الكتاب', o); } catch(e){}
+    }
+  }
+  NT.last = n;
+  try { if(navigator.setAppBadge){ if(n) navigator.setAppBadge(n); else navigator.clearAppBadge(); } } catch(e){}
 }
-async function tChatSend(retryId){
-  const C = T.chat, inp = $('cuTIn'); let item;
-  if(retryId){ item = C.pend.find(p => p.id === retryId); if(!item) return; item.failed = false; }
-  else { const v = (inp && inp.value || '').trim(); if(!v) return; item = {id: UID(), body: v, failed: false}; C.pend.push(item); inp.value = ''; }
-  tChatRender(true);
-  try { await api('chat_send', {p_student: C.sid, p_body: item.body, p_op: item.id}); C.pend = C.pend.filter(p => p.id !== item.id); await tChatPoll(false); tChatRender(true); }
-  catch(e){ item.failed = true; tChatRender(true); toast2('❌ لم تُرسل الرسالة: ' + e.message); }
-}
+CU.notify = notifyTick;
+setInterval(() => { if(document.visibilityState === 'visible') notifyTick(); }, 60000);
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') setTimeout(notifyTick, 800); });
+window.addEventListener('online', () => setTimeout(notifyTick, 1500));
+setTimeout(notifyTick, 5000);
 
 /* ═════════ التقارير ═════════ */
 const tblHtml = (head, rows) => `<div class="cu-scroll"><table class="cu-tbl"><tr>${head.map((h, i) => `<th${i === 1 ? ' class="nm"' : ''}>${E(h)}</th>`).join('')}</tr>${rows.map(r => `<tr>${r.map((c, i) => `<td${i === 1 ? ' class="nm"' : ''}>${E(c)}</td>`).join('')}</tr>`).join('')}</table></div>`;

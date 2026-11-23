@@ -55,7 +55,7 @@ const ev = (w, code) => w.eval(code);
   ok(!w.document.getElementById('backupBanner'), 'بعد النسخ لا يظهر التذكير');
   w._showUpdateBanner();
   ok(!!w.document.getElementById('updateBanner'), 'تنبيه التحديث يظهر');
-  ok(ev(w, "APP_VERSION") === '2.1.0' && /2\.1\.0/.test(w.document.getElementById('appVersionAuth').textContent), 'رقم الإصدار ظاهر في شاشة الدخول');
+  ok(ev(w, "APP_VERSION") === '2.2.0' && /2\.2\.0/.test(w.document.getElementById('appVersionAuth').textContent), 'رقم الإصدار ظاهر في شاشة الدخول');
   dom.window.close();
   const f = L.summary(); await L.pool.end(); process.exit(f ? 1 : 0);
 })().catch(e => { console.error('HARNESS ERROR', e); process.exit(2); });

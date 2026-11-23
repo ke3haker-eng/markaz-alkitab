@@ -34,6 +34,7 @@ begin
   r := comp_save(tokTA, jsonb_build_object('name','دوري فرسان القرآن','description','30 يوماً','start_date',today-10,'end_date',today+19,
         'halaqa_ids',jsonb_build_array('hA1'),'participants',jsonb_build_array(jsonb_build_object('student_id','s1','level','متقدم'),jsonb_build_object('student_id','s2'))));
   assert (r->>'ok')::boolean, 'teacher creates for own halaqa: '||r::text; k1 := r->>'id';
+  update competition_categories set daily_max_points = weekly_max_points where competition_id::text = k1;
   r := comp_get(tokTA, k1); assert jsonb_array_length(r->'categories') = 10 and jsonb_array_length(r->'participants') = 2, 'default cats + 2 participants';
   assert (select count(*) from competition_categories where competition_id::text = k1 and kind='core') = 9, '9 core cats';
   assert (select sum(weekly_max_points) from competition_categories where competition_id::text = k1 and kind='core') = 100, 'core total 100';

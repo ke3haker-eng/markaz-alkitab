@@ -58,6 +58,7 @@ async function loginStu(user, pass){
   ok((await N("select count(*)::int c from competition_participants where competition_id=$1", [comp.id]))[0].c === 2, 'المشاركان في قاعدة البيانات');
   ok((await N("select count(*)::int c from competition_categories where competition_id=$1", [comp.id]))[0].c === 11, '11 مجالاً (10 + المخصص)');
   const cats = await N("select id,key,name from competition_categories where competition_id=$1", [comp.id]);
+  await admin("update competition_categories set daily_max_points = weekly_max_points where competition_id=$1", [comp.id]);
   const catH = cats.find(c => c.key === 'hifz').id, catB = cats.find(c => c.key === 'bonus').id, catI = cats.find(c => c.key === 'itqan').id;
 
   console.log('\n[2] شبكة التقييم اليومي لعدة طلاب دفعة واحدة');
@@ -78,13 +79,15 @@ async function loginStu(user, pass){
 
   console.log('\n[3] لوحة النقاط: إضافة وخصم بسبب إلزامي + تصحيح');
   q(w, '[data-act="tab"][data-t="pts"]').click(); await sleep(1200);
-  const sel = q(w, '#pStu'); setV(w, sel, 's2', 'change'); setV(w, q(w, '#pCat'), catB, 'change'); await sleep(300);
-  ok(qa(w, '[data-act="p_item"]').length === 5, 'خيارات المكافآت الجاهزة الخمسة ظاهرة لمجال المكافآت');
+  const cb = q(w, '[data-ps="s2"]'); cb.checked = true; fire(w, cb, 'change');
+  q(w, `[data-act="p_cat"][data-c="${catB}"]`).click(); await sleep(300);
+  ok(qa(w, '[data-act="p_item"]').length === 5, 'خيارات المكافآت الجاهزة الخمسة ظاهرة عند اختيار مجال المكافآت');
   q(w, '[data-act="p_item"]').click(); await sleep(100);
   q(w, '[data-act="p_apply"]').click();
   await waitFor(async () => (await N("select count(*)::int c from competition_scores where entry_type='bonus'"))[0].c === 1);
   ok((await N("select points,reason from competition_scores where entry_type='bonus'"))[0].reason === 'صيام تطوع اختياري', 'مكافأة بسبب مسجل');
-  setV(w, q(w, '#pCat'), catH, 'change'); q(w, '[data-act="p_amt"][data-a="-2"]').click(); setV(w, q(w, '#pReason'), 'مخالفة سلوكية');
+  q(w, `[data-act="p_cat"][data-c="${catB}"]`).click(); q(w, `[data-act="p_cat"][data-c="${catH}"]`).click();
+  q(w, '[data-act="p_amt"][data-a="-2"]').click(); setV(w, q(w, '#pReason'), 'مخالفة سلوكية');
   q(w, '[data-act="p_apply"]').click(); await sleep(400);
   const conf = q(w, '.cu-modal [data-r="1"]'); ok(!!conf, 'تأكيد قبل الخصم'); if(conf) conf.click();
   await waitFor(async () => (await N("select count(*)::int c from competition_scores where entry_type='adjust'"))[0].c === 1);
@@ -170,14 +173,15 @@ async function loginStu(user, pass){
   console.log('\n[7] المحادثة بين الطالب والمعلم');
   dom = await loginStu('stu1', 'pw1234'); w = dom.window; w.spSwitchTab('badges'); await sleep(1300);
   q(w, '[data-act="seg"][data-seg="chat"]').click(); await sleep(1200);
-  setV(w, q(w, '#cuChatIn'), 'السلام عليكم يا شيخ، سؤال في الحفظ'); q(w, '[data-act="chatSend"]').click();
+  q(w, '#cuBody [data-act="c_open"]').click(); await sleep(1200);
+  setV(w, q(w, '#cuChatIn'), 'السلام عليكم يا شيخ، سؤال في الحفظ'); q(w, '[data-act="c_send"]').click();
   await waitFor(async () => (await N("select count(*)::int c from student_chat"))[0].c === 1);
   ok((await N("select sender_role from student_chat"))[0].sender_role === 'student', 'رسالة الطالب في قاعدة البيانات');
   dom.window.close();
   dom = await login('supA', 'pw1234'); w = dom.window; await w.CompUI.open('chat'); await sleep(1000);
-  ok(/سعد/.test(q(w, '#cuMain').textContent) && /جديدة/.test(q(w, '#cuMain').textContent), 'المعلم يرى المحادثة برسالة جديدة');
+  ok(/سعد/.test(q(w, '#cuMain').textContent) && !!q(w, '#cuMain .cu-reddot'), 'المعلم يرى المحادثة بنقطة حمراء لرسالة جديدة');
   q(w, '[data-act="c_open"]').click(); await sleep(1000);
-  setV(w, q(w, '#cuTIn'), 'وعليكم السلام ورحمة الله'); q(w, '[data-act="c_send"]').click();
+  setV(w, q(w, '#cuChatIn'), 'وعليكم السلام ورحمة الله'); q(w, '[data-act="c_send"]').click();
   await waitFor(async () => (await N("select count(*)::int c from student_chat"))[0].c === 2);
   ok((await N("select sender_role from student_chat order by id desc limit 1"))[0].sender_role === 'supervisor', 'رد المعلم مسجل');
   dom.window.close();
