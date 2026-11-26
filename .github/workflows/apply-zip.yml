@@ -4,7 +4,7 @@ on:
     inputs:
       zip:
         description: "اسم ملف zip المرفوع في جذر المستودع"
-        default: "markaz-alkitab-v2.0.0.zip"
+        default: "markaz-alkitab-v2.3.0.zip"
 permissions:
   contents: write
   actions: write
