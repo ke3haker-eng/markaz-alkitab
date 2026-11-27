@@ -2246,7 +2246,7 @@ body.records-locked .lock-notice{display:block}
 
       <div id="settingsList" class="stack"></div>
 
-      <!-- تسجيل الخروج (للمعلم فقط) -->
+      <!-- تسجيل الخروج (يظهر لكل المستخدمين داخل الحلقة) -->
       <div id="teacherLogoutCard" style="display:none">
         <button onclick="teacherLogout()" class="btn btn-red btn-full" style="padding:13px;font-size:13px;font-weight:800">🚪 تسجيل الخروج</button>
       </div>
@@ -2829,7 +2829,7 @@ const _supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSe
    كل العمليات الحساسة على الحسابات تمر عبر دوال Supabase (RPC)
    فلا تُقرأ كلمات المرور ولا الـ hash في المتصفح إطلاقاً.
 ════════════════════════════════════════════════ */
-const APP_VERSION = '2.3.0';
+const APP_VERSION = '2.3.1';
 const APP_BUILD   = '2026-11-26';
 
 let _authToken = null;          /* رمز الجلسة (يصدره السيرفر عند الدخول) */
@@ -10124,6 +10124,14 @@ function showSettings(){
       <button onclick="delStudent('${s.id}')" class="btn btn-red btn-sm">حذف</button>
     </div>
   </div>`).join('');
+  /* 2.3.1 — زر تسجيل الخروج يظهر دائماً في الإعدادات مهما كانت الصلاحيات (موظف/مساعد/معلم) */
+  const _lgCard = document.getElementById('teacherLogoutCard');
+  if(_lgCard){
+    _lgCard.style.display = '';
+    const _lgBtn = _lgCard.querySelector('button');
+    const _lgRole = _currentUser && _currentUser.role;
+    if(_lgBtn) _lgBtn.setAttribute('onclick', (_lgRole === 'employee' || _lgRole === 'supervisor' || _lgRole === 'masool') ? 'logoutApp()' : 'teacherLogout()');
+  }
   /* تحميل السؤال اليومي الحالي */
   setTimeout(_loadCurrentDQForTeacher, 200);
   openModal('mSettings');
@@ -13956,6 +13964,6 @@ window.addEventListener('appinstalled', () => {
   toast('✅ نظام الرضوان — تم التثبيت بنجاح 🎉');
 });
 </script>
-<script src="competition.js?v=2.3.0"></script>
+<script src="competition.js?v=2.3.1"></script>
 </body>
 </html>
