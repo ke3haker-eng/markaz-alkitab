@@ -10,9 +10,15 @@
 <meta name="apple-mobile-web-app-title" content="الرضوان">
 <link rel="manifest" id="pwaManifest" href="manifest.json">
 <title>مركز الكتاب للتحفيظ</title>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<script>
+/* 2.3.3 — إن وُجدت جلسة محفوظة نُخفي شاشة الدخول فوراً ونعرض شاشة تحميل بدلها (لا وميض).
+   مؤقّت أمان: بعد 7 ثوانٍ تزول شاشة التحميل مهما حدث حتى لا يعلق المستخدم عليها. */
+try{ if(localStorage.getItem('ridwan_session')){ document.documentElement.classList.add('has-session'); setTimeout(function(){ document.documentElement.classList.remove('has-session'); }, 7000); } }catch(e){}
+</script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" media="print" onload="this.media='all'">
+<noscript><link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700;800&display=swap" rel="stylesheet"></noscript>
 <style>
 :root{
   --g1:#10b981;--g2:#059669;--g3:#047857;
@@ -161,6 +167,13 @@ body{font-family:'IBM Plex Sans Arabic',sans-serif;background:var(--bg);color:va
 /* ══════════════════════════════════════
    AUTH
 ══════════════════════════════════════ */
+/* 2.3.3 — شاشة التحميل عند وجود جلسة محفوظة */
+#bootSplash{display:none;position:fixed;inset:0;z-index:2100;background:var(--ink);flex-direction:column;align-items:center;justify-content:center;gap:18px;color:rgba(255,255,255,.65);font-size:12px;font-weight:600}
+#bootSplash img{width:84px;height:84px;border-radius:22px}
+.boot-spin{width:26px;height:26px;border:3px solid rgba(255,255,255,.15);border-top-color:var(--g1);border-radius:50%;animation:bootSpin .8s linear infinite}
+@keyframes bootSpin{to{transform:rotate(360deg)}}
+html.has-session #bootSplash{display:flex}
+html.has-session #auth{display:none!important}
 #auth{
   position:fixed;inset:0;z-index:2000;
   background:var(--ink);
@@ -894,9 +907,9 @@ body.records-locked .lock-notice{display:block}
   .hq-grid{grid-template-columns:1fr 1fr;padding:14px 12px;gap:10px}
 }
 </style>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="vendor/jszip.min.js"></script>
+<script src="vendor/chart.umd.min.js"></script>
+<script src="vendor/sbclient.umd.js"></script>
 <style>
 /* ══════════════════════════════════════
    DASHBOARD TAB (لوحة التحكم المركزية)
@@ -1041,6 +1054,7 @@ body.records-locked .lock-notice{display:block}
 </style>
 </head>
 <body>
+<div id="bootSplash"><img src="icon-192.png" alt=""><div class="boot-spin"></div><div>جارٍ التحميل…</div></div>
 
 <!-- ════════════════════════════════════
      AUTH SCREEN — Supabase
@@ -2858,7 +2872,7 @@ const _supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSe
    كل العمليات الحساسة على الحسابات تمر عبر دوال Supabase (RPC)
    فلا تُقرأ كلمات المرور ولا الـ hash في المتصفح إطلاقاً.
 ════════════════════════════════════════════════ */
-const APP_VERSION = '2.3.2';
+const APP_VERSION = '2.3.3';
 const APP_BUILD   = '2026-11-26';
 
 let _authToken = null;          /* رمز الجلسة (يصدره السيرفر عند الدخول) */
@@ -5725,7 +5739,7 @@ function _setBtnLoading(id, loading){
 /* ════════════════════════════════════════════════
    INIT
 ════════════════════════════════════════════════ */
-window.onload = async () => {
+async function _bootApp(){
   /* تنظيف بيانات قديمة حساسة من النسخ السابقة (hash كلمة مرور المالك) */
   try { localStorage.removeItem('ridwan_masool_creds'); } catch(e){}
 
@@ -5758,30 +5772,8 @@ window.onload = async () => {
         showAuthPanel('choice');
         return;
       }
-      /* مع وجود اتصال: الدور والصلاحيات تأتي من السيرفر لا من التخزين المحلي */
-      if(_authToken && navigator.onLine){
-        try {
-          const chk = await Promise.race([
-            _rpc('app_session_check', {p_token:_authToken}),
-            new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),4000))
-          ]);
-          if(chk && chk.ok){
-            const su = chk.user;
-            user.role = su.role; user.perms = su.perms || {}; user.center_id = su.center_id; user.status = su.status;
-            if(su.full_name) user.full_name = su.full_name;
-            if(su.id) user.id = su.id;
-            if(su.halaqa_id !== undefined) user.halaqa_id = su.halaqa_id;
-            _saveSession(user);
-            _applyRecordLockUI();
-          } else if(chk && chk.ok === false){
-            _authToken = null;
-            localStorage.removeItem('ridwan_session');
-            showAuthPanel('choice');
-            setTimeout(()=>toast('🔒 انتهت الجلسة — سجّل الدخول من جديد'), 400);
-            return;
-          }
-        } catch(e){ /* لا اتصال أو تأخر: نكمل بالجلسة المحلية */ }
-      }
+      /* 2.3.3 — الدور والصلاحيات تُتحقَّق من السيرفر في الخلفية؛ الدخول فوري من البيانات المحلية */
+      if(_authToken && navigator.onLine) _bgSessionCheck(user);
 
       /* طالب بجلسة قديمة بلا رمز (من النسخ السابقة): نستعيد الرمز تلقائياً دون إزعاجه */
       if(!_authToken && user.role === 'student' && navigator.onLine){ _currentUser = user; await _ensureToken(); }
@@ -5847,8 +5839,14 @@ window.onload = async () => {
             } else if(user.role === 'teacher' && user.halaqa_id){
               _openTeacherHalaqa(user.halaqa_id);
             } else {
-              if(centerCfg.supabase_center_id) await _loadHalaqatFromSupabase();
+              /* 2.3.3 — ندخل فوراً بالقائمة المحلية ثم نحدّثها من السيرفر في الخلفية */
               _enterStaffHome();
+              if(centerCfg.supabase_center_id){
+                _loadHalaqatFromSupabase().then(()=>{
+                  const _hs = document.getElementById('halaqatScreen');
+                  if(_hs && !_hs.classList.contains('hidden')) renderHalaqatHome();
+                }).catch(()=>{});
+              }
             }
             return;
           }
@@ -5870,7 +5868,56 @@ window.onload = async () => {
 
   /* عرض شاشة الاختيار */
   showAuthPanel('choice');
-};
+}
+
+/* 2.3.3 — إزالة شاشة التحميل */
+function _bootFinish(){ document.documentElement.classList.remove('has-session'); }
+
+/* 2.3.3 — فحص الجلسة مع السيرفر دون تعطيل فتح التطبيق */
+function _permsKey(u){
+  const p = (u && u.perms) || {};
+  return JSON.stringify([u && u.role, (u && u.halaqa_id) || null, (u && u.center_id) || null, Object.keys(p).sort().map(k=>[k,!!p[k]])]);
+}
+async function _bgSessionCheck(user){
+  try {
+    const chk = await Promise.race([
+      _rpc('app_session_check', {p_token:_authToken}),
+      new Promise((_,rej)=>setTimeout(()=>rej(new Error('timeout')),10000))
+    ]);
+    /* المستخدم سجّل خروجه أثناء الانتظار */
+    if(!_authToken || !localStorage.getItem('ridwan_session')) return;
+    if(chk && chk.ok){
+      const su = chk.user;
+      const before = _permsKey(user);
+      user.role = su.role; user.perms = su.perms || {}; user.center_id = su.center_id; user.status = su.status;
+      if(su.full_name) user.full_name = su.full_name;
+      if(su.id) user.id = su.id;
+      if(su.halaqa_id !== undefined) user.halaqa_id = su.halaqa_id;
+      _saveSession(user);
+      if(before !== _permsKey(user)){
+        /* تغيّر الدور أو الصلاحيات من السيرفر: نعيد التحميل مرة واحدة لتطبيقها */
+        let again = false;
+        try{ again = !!sessionStorage.getItem('_sess_reloaded'); sessionStorage.setItem('_sess_reloaded','1'); }catch(e){}
+        if(!again){ location.reload(); return; }
+      }
+      _applyRecordLockUI();
+    } else if(chk && chk.ok === false){
+      _authToken = null;
+      localStorage.removeItem('ridwan_session');
+      toast('🔒 انتهت الجلسة — سجّل الدخول من جديد');
+      setTimeout(()=>location.reload(), 1500);
+    }
+  } catch(e){ /* لا اتصال أو تأخر: نكمل بالجلسة المحلية */ }
+}
+
+/* 2.3.3 — البدء عند اكتمال بناء الصفحة (وليس بعد انتهاء تحميل كل الموارد) */
+window.addEventListener('DOMContentLoaded', ()=>{
+  setTimeout(async ()=>{
+    try { await _bootApp(); }
+    catch(e){ console.warn('boot error:', e); try{ showAuthPanel('choice'); }catch(_){} }
+    finally { _bootFinish(); }
+  }, 0);
+});
 
 /* ════════════════════════════════════════════════
    AUTH (القديمة — محتفظ بها لتوافق الكود الداخلي)
@@ -14036,6 +14083,6 @@ window.addEventListener('appinstalled', () => {
   toast('✅ نظام الرضوان — تم التثبيت بنجاح 🎉');
 });
 </script>
-<script src="competition.js?v=2.3.2"></script>
+<script src="competition.js?v=2.3.3"></script>
 </body>
 </html>
