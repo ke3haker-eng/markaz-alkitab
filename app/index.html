@@ -1729,6 +1729,14 @@ body.records-locked .lock-notice{display:block}
         <h3 class="sec-title"><span class="sec-dot"></span> تصدير تقرير شامل</h3>
       </div>
 
+      <!-- اختيار الحلقة للتصدير (2.3.2) -->
+      <div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--r2);padding:14px;margin-bottom:12px;box-shadow:var(--sh1)">
+        <p class="fl mb2">الحلقة المراد تصديرها</p>
+        <select id="rptHalaqaSel" class="fi">
+          <option value="">📚 كل الحلقات</option>
+        </select>
+      </div>
+
       <!-- خيار الترتيب -->
       <div style="background:var(--card);border:1.5px solid var(--border);border-radius:var(--r2);padding:14px;margin-bottom:12px;box-shadow:var(--sh1)">
         <p class="fl mb2">ترتيب الطلاب في التقرير</p>
@@ -2241,6 +2249,27 @@ body.records-locked .lock-notice{display:block}
               </label>
             </div>
           </div>
+        </div>
+      </div>
+
+      <!-- تصدير تقرير الحلقة (2.3.2) -->
+      <div id="hqReportCard" style="background:#f0fdf4;padding:14px;border-radius:var(--r2);border:1.5px solid #bbf7d0">
+        <p class="f10 fw8 mb2" style="color:#15803d;text-transform:uppercase;letter-spacing:.04em">📤 تصدير تقرير الحلقة</p>
+        <div class="stack" style="gap:8px">
+          <p class="fl">الفترة (اتركها فارغة لكل السجلات)</p>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div><p class="fl">من</p><input type="date" id="hqRptFrom" class="fi"></div>
+            <div><p class="fl">إلى</p><input type="date" id="hqRptTo" class="fi"></div>
+          </div>
+          <p class="fl">ترتيب الطلاب</p>
+          <select id="hqRptSort" class="fi">
+            <option value="default">📋 الافتراضي</option>
+            <option value="grade">🎓 المرحلة</option>
+            <option value="att-desc">📈 حضور (أكثر→أقل)</option>
+            <option value="att-asc">📉 حضور (أقل→أكثر)</option>
+            <option value="suras-desc">📖 عدد السور (الأكثر أولاً)</option>
+          </select>
+          <button onclick="exportHalaqaReportFromSettings()" class="btn btn-full btn-sm" style="background:#15803d;color:#fff;border:none">🌐 تصدير التقرير (HTML مع PDF وExcel)</button>
         </div>
       </div>
 
@@ -2829,7 +2858,7 @@ const _supa = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSe
    كل العمليات الحساسة على الحسابات تمر عبر دوال Supabase (RPC)
    فلا تُقرأ كلمات المرور ولا الـ hash في المتصفح إطلاقاً.
 ════════════════════════════════════════════════ */
-const APP_VERSION = '2.3.1';
+const APP_VERSION = '2.3.2';
 const APP_BUILD   = '2026-11-26';
 
 let _authToken = null;          /* رمز الجلسة (يصدره السيرفر عند الدخول) */
@@ -10132,6 +10161,9 @@ function showSettings(){
     const _lgRole = _currentUser && _currentUser.role;
     if(_lgBtn) _lgBtn.setAttribute('onclick', (_lgRole === 'employee' || _lgRole === 'supervisor' || _lgRole === 'masool') ? 'logoutApp()' : 'teacherLogout()');
   }
+  /* 2.3.2 — بطاقة تصدير التقرير: تُخفى عن الموظف الذي لا يملك صلاحية التقارير */
+  const _rpCard = document.getElementById('hqReportCard');
+  if(_rpCard) _rpCard.style.display = (_currentUser && _currentUser.role==='employee' && !can('reports')) ? 'none' : '';
   /* تحميل السؤال اليومي الحالي */
   setTimeout(_loadCurrentDQForTeacher, 200);
   openModal('mSettings');
@@ -11628,6 +11660,7 @@ function refreshDashboard(){
   _renderDashStats(data);
   _renderDashAlerts(data);
   _renderDashCharts(data);
+  _fillReportHalaqaSel();
 }
 
 /* ── إحصائيات سريعة ── */
@@ -11965,19 +11998,60 @@ function _renderDashCharts(data){
   });
 }
 
+/* ── 2.3.2: تعبئة قائمة اختيار الحلقة للتصدير في لوحة التحكم ── */
+function _fillReportHalaqaSel(){
+  const sel = document.getElementById('rptHalaqaSel');
+  if(!sel) return;
+  const cur = sel.value;
+  const list = _visibleHalaqat();
+  sel.innerHTML = '';
+  sel.add(new Option('📚 كل الحلقات',''));
+  list.forEach(h=>sel.add(new Option((h.emoji||'📖')+' '+h.name+(h.sheikh?' — '+h.sheikh:''), h.id)));
+  if(cur && list.some(h=>h.id===cur)) sel.value = cur;
+}
+
+/* ── 2.3.2: تصدير تقرير الحلقة الحالية من إعدادات الحلقة (للمحفظ/المساعد) ── */
+function exportHalaqaReportFromSettings(){
+  const f = document.getElementById('hqRptFrom').value;
+  const t = document.getElementById('hqRptTo').value;
+  exportFullReport({
+    hqId: activeHalaqaId,
+    live: true,
+    from: f ? new Date(f+'T00:00:00') : null,
+    to:   t ? new Date(t+'T23:59:59') : null,
+    sort: document.getElementById('hqRptSort').value
+  });
+}
+
 /* ════════════════════════════════════════════════
    EXPORT FULL HTML REPORT
 ════════════════════════════════════════════════ */
-async function exportFullReport(){
+async function exportFullReport(opts){
   if(!_guard('reports')) return;
+  opts = opts || {};
   toast('⏳ جارٍ إنشاء التقرير…');
-  const data = _getAllCenterData();
+  let data = _getAllCenterData();
   const now  = new Date();
   const _thresh = centerCfg.absentThreshold||4;
 
-  /* ── نطاق التاريخ المحدد في لوحة التحكم ── */
-  const _rptFrom = _chartFrom;
-  const _rptTo   = _chartTo;
+  /* ── 2.3.2: تصدير حلقة واحدة (من لوحة التحكم أو من إعدادات الحلقة) ── */
+  let _onlyHq = opts.hqId || (document.getElementById('rptHalaqaSel')||{}).value || '';
+  if(_halaqaScoped()) _onlyHq = _currentUser.halaqa_id; /* المساعد المقيّد لا يصدّر إلا حلقته */
+  if(_onlyHq){
+    data = data.filter(d=>d.hq.id===_onlyHq);
+    if(!data.length && opts.live && db){
+      data = [{ hq:{ id:_onlyHq, name:(document.getElementById('topName')||{}).textContent||'الحلقة', sheikh:(db.config&&db.config.sheikhName)||'', emoji:'📖' }, db }];
+    }
+    /* من إعدادات الحلقة: نستخدم البيانات الحية الحالية */
+    if(opts.live && db && activeHalaqaId===_onlyHq && data[0]) data[0].db = db;
+    if(!data.length){ toast('⚠️ تعذّر العثور على الحلقة'); return; }
+  }
+  const _scopeLabel = data.length===1 ? ' · الحلقة: '+(data[0].hq.name||'') : '';
+
+  /* ── نطاق التاريخ وترتيب الطلاب ── */
+  const _rptFrom = ('from' in opts) ? opts.from : _chartFrom;
+  const _rptTo   = ('to'   in opts) ? opts.to   : _chartTo;
+  const _sortMode = opts.sort || _reportSort;
 
   /* ── مساعد: فلترة سجلات الطالب حسب النطاق الزمني ── */
   function _recsInRange(records){
@@ -12071,16 +12145,16 @@ async function exportFullReport(){
 
     /* ── ترتيب الطلاب حسب الخيار المحدد ── */
     const sortedStudents = [...students].sort((a,b)=>{
-      if(_reportSort === 'default') return 0;
-      if(_reportSort === 'grade'){
+      if(_sortMode === 'default') return 0;
+      if(_sortMode === 'grade'){
         return (a.grade||'').localeCompare(b.grade||'', 'ar');
       }
-      if(_reportSort === 'att-desc' || _reportSort === 'att-asc'){
+      if(_sortMode === 'att-desc' || _sortMode === 'att-asc'){
         const ha = _calcAttDays(_recsInRange(a.records)).h;
         const hb = _calcAttDays(_recsInRange(b.records)).h;
-        return _reportSort === 'att-desc' ? hb - ha : ha - hb;
+        return _sortMode === 'att-desc' ? hb - ha : ha - hb;
       }
-      if(_reportSort === 'suras-desc'){
+      if(_sortMode === 'suras-desc'){
         const sa = _countUniqueSuras(_recsInRange(a.records));
         const sb = _countUniqueSuras(_recsInRange(b.records));
         return sb - sa;
@@ -12174,10 +12248,10 @@ async function exportFullReport(){
     return {
       sheet: (hq.name||'حلقة').replace(/[\\/*?[\]]/g,'_').slice(0,31),
       rows:[...(db.students||[])].sort((a,b)=>{
-        if(_reportSort==='default') return 0;
-        if(_reportSort==='grade') return (a.grade||'').localeCompare(b.grade||'','ar');
-        if(_reportSort==='att-desc'||_reportSort==='att-asc'){const ha=_calcAttDays(_recsInRange(a.records)).h,hb=_calcAttDays(_recsInRange(b.records)).h;return _reportSort==='att-desc'?hb-ha:ha-hb;}
-        if(_reportSort==='suras-desc') return _countUniqueSuras(_recsInRange(b.records))-_countUniqueSuras(_recsInRange(a.records));
+        if(_sortMode==='default') return 0;
+        if(_sortMode==='grade') return (a.grade||'').localeCompare(b.grade||'','ar');
+        if(_sortMode==='att-desc'||_sortMode==='att-asc'){const ha=_calcAttDays(_recsInRange(a.records)).h,hb=_calcAttDays(_recsInRange(b.records)).h;return _sortMode==='att-desc'?hb-ha:ha-hb;}
+        if(_sortMode==='suras-desc') return _countUniqueSuras(_recsInRange(b.records))-_countUniqueSuras(_recsInRange(a.records));
         return 0;
       }).map((s,i)=>{
         const recsRange = _recsInRange(s.records);
@@ -12251,7 +12325,7 @@ tr:hover td{background:#f8fafc}
 <div class="topbar" id="topbar">
   <div>
     <h1>📊 تقرير ${centerCfg.centerName||'المركز'}</h1>
-    <p>المشرف: ${centerCfg.managerName||'—'} · ${periodLabel} · تاريخ الإصدار: ${now.toLocaleDateString('ar-EG')}</p>
+    <p>المشرف: ${centerCfg.managerName||'—'}${_scopeLabel} · ${periodLabel} · تاريخ الإصدار: ${now.toLocaleDateString('ar-EG')}</p>
   </div>
   <div class="export-btns">
     <button class="btn-pdf" onclick="exportToPDF()">🖨️ تصدير PDF</button>
@@ -12264,7 +12338,7 @@ tr:hover td{background:#f8fafc}
   <!-- إحصائيات -->
   <div class="section-title">إحصائيات المركز</div>
   <div class="stats-row">
-    <div class="stat-card"><div class="stat-n">${halaqatList.length}</div><div class="stat-l">عدد الحلقات</div></div>
+    <div class="stat-card"><div class="stat-n">${data.length}</div><div class="stat-l">عدد الحلقات</div></div>
     <div class="stat-card"><div class="stat-n">${totalStudents}</div><div class="stat-l">إجمالي الطلاب</div></div>
     <div class="stat-card"><div class="stat-n">${totalRecords}</div><div class="stat-l">إجمالي السجلات</div></div>
     <div class="stat-card ${alerts.length?'red':''}"><div class="stat-n">${alerts.length}</div><div class="stat-l">تنبيهات غياب</div></div>
@@ -12365,7 +12439,6 @@ window.addEventListener('DOMContentLoaded',()=>{
 
 /* تصدير PDF */
 function exportToPDF(){
-  if(!_guard('reports')) return;
   document.querySelector('.export-btns').style.display='none';
   window.print();
   setTimeout(()=>document.querySelector('.export-btns').style.display='flex',1000);
@@ -12373,7 +12446,6 @@ function exportToPDF(){
 
 /* تصدير Excel */
 async function exportToExcel(){
-  if(!_guard('reports')) return;
   if(typeof JSZip==='undefined'){alert('جارٍ تحميل المكتبة…');return;}
   /* بناء xlsx بسيط */
   function escXml(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
@@ -12390,7 +12462,7 @@ async function exportToExcel(){
     xml+=\`<row r="1">\${headers.map((h,i)=>strCell(cols[i]+'1',h)).join('')}</row>\`;
     sd.rows.forEach((row,ri)=>{
       const rn=ri+2;
-      xml+=\`<row r="\${rn}">\${row.map((v,ci)=>ci===0||ci>=4?numCell(cols[ci]+rn,v):strCell(cols[ci]+rn,v)).join('')}</row>\`;
+      xml+=\`<row r="\${rn}">\${row.map((v,ci)=>ci===0||(ci>=4&&ci<=6)?numCell(cols[ci]+rn,v):strCell(cols[ci]+rn,v)).join('')}</row>\`;
     });
     xml+='</sheetData></worksheet>';
     sharedSheetXml.push(xml);
@@ -12422,7 +12494,7 @@ async function exportToExcel(){
   /* تنزيل الملف */
   const blob = new Blob([html],{type:'text/html;charset=utf-8'});
   const dateStr = now.toISOString().slice(0,10);
-  const fname = `تقرير_${_safeFileName(centerCfg.centerName||'المركز')}_${dateStr}.html`;
+  const fname = `تقرير_${_safeFileName(centerCfg.centerName||'المركز')}${data.length===1?'_'+_safeFileName(data[0].hq.name||''):''}_${dateStr}.html`;
   const ok = await _shareOrDownload(blob, fname);
   if(ok) toast('✅ تم تصدير التقرير بنجاح');
   else   toast('⚠️ تعذّر التنزيل — حاول مجدداً');
@@ -13964,6 +14036,6 @@ window.addEventListener('appinstalled', () => {
   toast('✅ نظام الرضوان — تم التثبيت بنجاح 🎉');
 });
 </script>
-<script src="competition.js?v=2.3.1"></script>
+<script src="competition.js?v=2.3.2"></script>
 </body>
 </html>
